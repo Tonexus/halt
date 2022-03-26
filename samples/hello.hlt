@@ -1,0 +1,8 @@
+// Hello world program
+
+def partial entry(_) = {
+    def import io;
+}, {
+    io::print("Hello, World!\n");
+    halt;
+};

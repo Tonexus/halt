@@ -1,0 +1,24 @@
+// Bubble sort function on slices of signed 32 bit integers
+
+def pub fn sort(list: `&[S32]) -> () = {
+    let size := list.len();
+    // At most size passes to exchange first and last elements
+    for _ from range(0, size) {
+        // Track whether any swaps have occurred this pass
+        let swapped := false;
+        for j from range(0, size - 1) {
+            // If adjacent elements are out of order, swap them
+            if list[j] < list[j+1] {
+                let temp := list[j+1];
+		list[j+1] := list[j];
+		list[j] := temp;
+		swapped := true;
+	    }
+	}
+	// If no swaps have been performed this pass, we are done
+	if !swapped {
+	    break;
+	}
+    }
+    return;
+}

@@ -1,0 +1,41 @@
+// Class definition for iterators ("classes" in halt are equivalent to "abstract
+// classes", "interfaces", and "traits" of other languages)
+
+def pub class Iterator(T) = {
+    def const fn size: (&Self) -> (Size);
+    def fn next: (`&Self) -> (Option(`T));
+}
+
+// Range struct
+
+def with T <: Integral struct Range(T) = {
+    min: T;
+    max: T;
+    cur: `T;
+}
+
+// Definition of iterator type on range type (equivalent to "subclassing" or
+// "implementing" in other languages)
+
+def with T <: Integral class Iterator(T) on Range(T) = {
+    def fn size(self: &Self) -> (Size) = {
+        return Size(self.max() - self.min());
+    }
+
+    def fn next(self: `&Self) -> (Option(`T)) = {
+        if self.cur != self.max {
+            self.cur += 1;
+	    return Some(self.cur - 1);
+	} else {
+	    return None;
+	}
+    }
+}
+
+def with T <: Integral pub fn range(min: T, max: T) -> (`Range(T)) = {
+    return {
+        min = min;
+	max = max;
+	cur = min;
+    };
+}

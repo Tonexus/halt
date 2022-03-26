@@ -1,0 +1,4 @@
+I want programs written in Halt to have good, and generally deterministic
+performance. To that end, there is no out-of-the-box garbage collector. However,
+to ensure safety and avoid undefined behavior, the Halt compiler uses borrow
+checking and lifetimes (a la Rust) to handle memory allocation.
