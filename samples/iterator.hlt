@@ -8,7 +8,9 @@ def pub class Iterator(T) = {
 
 // Range struct
 
-def with T <: Integral struct Range(T) = {
+def struct Range(T) wrt {
+    def type T <: Integral;
+} = {
     min: T;
     max: T;
     cur: `T;
@@ -17,7 +19,9 @@ def with T <: Integral struct Range(T) = {
 // Definition of iterator type on range type (equivalent to "subclassing" or
 // "implementing" in other languages)
 
-def with T <: Integral class Iterator(T) on Range(T) = {
+def class Iterator(T) on Range(T) wrt {
+    def type T <: Integral;
+} = {
     def fn size(self: &Self) -> (Size) = {
         return Size(self.max() - self.min());
     }
@@ -32,7 +36,9 @@ def with T <: Integral class Iterator(T) on Range(T) = {
     }
 }
 
-def with T <: Integral pub fn range(min: T, max: T) -> (`Range(T)) = {
+def pub fn range(min: T, max: T) -> (`Range(T)) wrt {
+    def type T <: Integral;
+} = {
     return {
         min = min;
 	max = max;

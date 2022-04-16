@@ -1,14 +1,26 @@
-I want a language such that all total programs halt*. To this end, Halt has no
-recursive functions nor recursive types. Generally, the only repetition control
-flow construct is the for loop, which can only iterate over a type with a
-"bounded iterator" interface.
+According to
+[Meyer and Ritchie](https://people.csail.mit.edu/meyer/meyer-ritchie.pdf),
+primitive recursive functions are in bijection with LOOP programs. Furthermore,
+loop programs are not only guaranteed termination, but also have a computable
+time complexity (though the optimal computable bound is Ackermann).
 
-*However, programs exist for which nontermination or unknown termination is
+The goal of Halt is to take LOOP and expand it with the usual programming
+language abstractions, such as interesting data types (product and sum types,
+interfaces, generics) and more efficient control flow (e.g. adding conditionals,
+non-recursive procedure calls, breaking loops), while maintaining tractable
+static analysis of computability and complexity.
+
+In Halt, all total programs halt. To this end, there are no recursive functions
+nor recursive types. The only repetition control flow construct is the for loop,
+which can only iterate over a type with a "bounded iterator" interface.
+
+However, programs do exist for which nontermination or unknown termination is
 desirable. For instance, consider a program that deals with user input or a
 program that is intended to accept TCP connections forever (at least as long as
 the hardware remains functional). Thus, a robust effects system to track the
 above case is necessary. Conveniently, such an effect system can be used to
-also track side effects (IO) and algebraic effects.
+also track side effects (IO) and possibly algebraic effects (though efficiently
+implementng algebraic effects is a major question).
 
 Getting back to the topic of nontermination, functions with the "!" effect are
 referred to as "partial" (non-partial functions are "total") and are allowed to

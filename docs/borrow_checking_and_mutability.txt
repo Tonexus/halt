@@ -1,4 +1,55 @@
-I want programs written in Halt to have good, and generally deterministic
-performance. To that end, there is no out-of-the-box garbage collector. However,
-to ensure safety and avoid undefined behavior, the Halt compiler uses borrow
-checking and lifetimes (a la Rust) to handle memory allocation.
+Halt programs should have good, and generally deterministic performance. To that
+end, there is no out-of-the-box garbage collector. However, to ensure safety and
+avoid undefined behavior, the Halt compiler uses borrow checking and lifetimes
+(a la Rust) to handle memory allocation.
+
+However, should exist some mechanism to defragment memory? Only called
+explicitly by giving control to "clean up" function, maybe provide mechanisms to
+call when blocked by io? Allow per thread for thread-local data?
+
+To facillitate borrow checking, need mutability aware types, specifically:
+
+- value
+
+- mutable reference (always uncopiable)
+
+- immutable uncopiable reference
+
+- immutable copiable reference
+
+Value can be transmuted into a mutable reference or an immutable copiable
+reference, and both the mutable reference and the immutable copiable reference
+can be transmuted into an immutable uncopiable reference.
+
+Idea: further mutability variants for product types to allow smiultaneous access
+to a "mutable" variable as long as the simultaneous accesses are to disjoint
+sets of fields.
+
+e.g.
+
+```
+def Foo = \&{
+    count_a: U32,
+    count_b: U32,
+}
+
+def increment_a(the_foo: &mut Foo) -> () {
+    the_food.count_a += 1;
+}
+
+def increment_b(the_foo: &mut Foo) -> () {
+    the_food.count_b += 1;
+}
+
+def get_total_count(the_foo: &Foo) -> (U32) {
+    return the_foo.count_a + the_foo.count_b;
+}
+```
+
+Clearly, the `increment_a` and `increment_b` functions should be safe to use
+simultaneously. A mutable `Foo` should be able to split into two references,
+`Foo@A` and `Foo@B` (syntax pending) such that `Foo@A` can be used with
+`increment_a` and `Foo@B` with `increment_b`.
+
+How to do abstractly and hide implementation details? Define variants on what is
+exposed publically (public fields and public methods)?
