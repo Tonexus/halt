@@ -1,0 +1,221 @@
+## Data types
+
+Data types fall into three categories: structural types, behavioral types, and
+concrete types.
+
+### Structural types
+
+Structural types reflect the composition of smaller data structures into larger,
+more complex structures. Structural types are generally algebraic data types.
+
+#### Primitive data types
+
+The basic building blocks of structural types are the true primtive data types
+and the pseudoprimitive data types. The true primitive data types consist of
+
+* `()` - the unit type
+
+* Reference types - see other page for more details (to be added)
+
+The pseudoprimitive data types include
+
+* `Bool` - taking on either the value "true" or the value "false"
+
+* `U8`, `U16`, `U32`, `U64` - representing unsigned integers of their respective size
+
+* `S8`, `S16`, `S32`, `S64` - representing signed integers of their respective size
+
+* `Float` - representing IEEE floating point numbers
+
+#### Compositional types
+
+Primitive data types can be combined via two compositional data types, the
+product type and the sum type.
+
+##### Product types
+
+Product types have the following form:
+
+```
+// type itself
+Foo := \*{
+    label_1: Type1,
+    label_2: Type2,
+    ...
+}
+
+...
+
+    // initialization, inferring types of bar and baz
+    let foo = \*{label_1: bar, label_2: baz, ...}
+```
+
+A product type represents a type that includes all of the constituent types.
+Halt has syntactic sugar for two important varieties of product types, the tuple
+and the array. A tuple is expressed as follows:
+
+```
+// type itself
+Foo := (Type1, Type2, ...)
+
+...
+
+    // initialization, inferring types of bar and baz
+    let foo = (bar, baz, ...)
+```
+
+The above tuple type is equivalent to the following product type:
+
+```
+\*{
+    _1: Type1,
+    _2: Type2,
+    ...
+}
+```
+
+An array is expressed as follows:
+
+```
+[Type; length]
+```
+
+The above array type is equivalent to the following product type with `length`
+constituent types:
+
+```
+\*{
+    _1: Type,
+    _2: Type,
+    ...
+}
+```
+
+Furthermore, the array can be initialized with either a constexpr or a special
+initializer function as follows:
+
+```
+    // infers type of some_const
+    let foo_const = [some_const; length]
+
+    // init_fn must have type signature (T, U32) -> (S) when array elements have
+    // type S and args has type T
+    let foo_fn = [init_fn; args; length]
+```
+
+##### Sum types
+
+Sum types have the following form:
+
+```
+// type itself
+Foo := \+{
+    label_1: Type1,
+    label_2: Type2,
+    ...
+}
+
+...
+
+    // initialization (to variant label_2)
+    let foo = \+{label_1: Type1, label_2: Type2 = bar, label_3: Type3, ...};
+```
+
+
+A sum type represents a type that is one of the constituent types. For example,
+the Bool primitive type can be treated as the following sum type:
+
+```
+\+{
+    true:  (),
+    false: (),
+}
+```
+
+Similarly, each of the pseudoprimitive data types can be represented as a sum
+type.
+
+##### Compositional type equivalencies
+
+Any singleton compositional type is equivalent to the constituent type. For
+instance, all of the following types are equivalent, regardless of labels:
+
+```
+\*{
+    foo: U32,
+}
+```
+
+```
+\+{
+    foo: U32,
+}
+```
+
+```
+\+{
+    bar: \*{
+        baz: U32,
+    },
+}
+```
+
+```
+((((U32))))
+```
+
+```
+[U32; 1]
+```
+
+Similarly, every empty compositional type is equivalent to the nullary type.
+
+### Behavioral types
+
+Behavioral types reflect how a type interacts with other types, regardless of
+the underlying data. Such interactions are defined by methods, function types
+that take the behavioral type as the first argument. In such function type
+definitions, the explicit type name of the behavioral type is replaced with
+`Self`. See the following example:
+
+```
+\${
+    get_size: (Self) -> (U32),
+    get_name: (Self) -> ([U8; 10]),
+}
+```
+
+### Concrete types
+
+Concrete types reflect the implementation of one or more behavioral types for an
+underlying structural type. See the following example for concrete types
+`RectangularPrism` and `Cube`:
+
+```
+SomeStruct := \*{
+    x: U32,
+    y: U32,
+    z: U32,
+};
+
+HasVolume := \${
+    get_volume: (Self) -> (U32),
+};
+
+RectangularPrism repr := SomeStruct;
+
+RectangularPrism impl HasVolume := { // need some notation for "set of definitions", maybe \%{ ?
+    get_volume: (self: Self) -> (U32) := {
+        return self.x * self.y * self.z;
+    };
+};
+
+Cube repr := U32;
+
+Cube impl HasVolume := {
+    get_volume: (self: Self) -> (U32) := {
+        return self * self * self;
+    };
+};
+```
+

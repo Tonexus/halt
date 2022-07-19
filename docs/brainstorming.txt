@@ -69,12 +69,12 @@ def Point3D = {&
     z: Float,
 }
 
-def fn len(p: Point2D) -> Float = {
+def fn len(p: Point2D) -> (Float) = {
     return (p.x^2 + p.y^2)^0.5;
 }
 
 // example allowed use structural typing on fields
-def fn proj_len(p: Point3D) -> Float = {
+def fn proj_len(p: Point3D) -> (Float) = {
     return len {z -> _} p; // needs to explicitly throw away z to get a Point2D
     // equivalent: return {z -> _, Point2D -> _0 = {return len x;}} p
 }
@@ -91,3 +91,18 @@ def fn proj_len(p: Point3D) -> Float = {
 // evaluates to false
 
 // loop expressions evaluate to the final iteration values. Break immediately causes current iteration values to be output
+
+// effect system
+// each function can have effects ... implicit arguments? i.e. similar to how static/global variables can be considered "passed" to every function
+
+def fn foo(a: U32) -> io::OUTPUT; FOREVER = { // no return effect, indicated by no return type
+    for { // infinite loop requires FOREVER effect
+        io::print("foo"); // print function has io::OUTPUT effect iself, so caller must as well, implicitly inherets from caller
+    }
+}
+
+// use compiler/meta directives to indicate code entry point
+// meta directives to indicate whether a const function should be evaluated at compile time
+// meta directives whether to inline an instance of a function call (at call site) or also all instances of a function (at definition)
+// meta directives unroll loop
+// meta directives elide bounds check, elide matching on sum type, need proofs?

@@ -17,6 +17,12 @@ To facillitate borrow checking, need mutability aware types, specifically:
 
 - immutable copiable reference
 
+Brainstorming -> references exist on two axes, immutability and uniqueness. A
+unique reference can never become a copiable reference and an immutable
+reference can never become a mutable reference. However, a unique mutable
+reference can always be treated as a unique immutable reference, and a copiable
+immutable reference can always be treated as a unique immutable reference.
+
 Value can be transmuted into a mutable reference or an immutable copiable
 reference, and both the mutable reference and the immutable copiable reference
 can be transmuted into an immutable uncopiable reference.

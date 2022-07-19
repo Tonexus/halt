@@ -1,0 +1,6 @@
+Hybridization between the idea of global/static variables and effect systems.
+Implicit arguments could hold things like memory allocators, async runtimes,
+thread initializers, signal handlers, io streams, os syscalls in a similar
+fashion to function effects that are parameterized. Could also be used with the
+unit type to indicate divergence/nontermination or exception types for exception
+handling.
