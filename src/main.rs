@@ -13,11 +13,25 @@ pub enum StructuralType {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum LiteralExpression {
+    Unit,
+    Boolean,
+    Integer,
+    Float,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct CallExpression {
+    name:     String,
+    argument: Box<Expression>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ExpressionVariant { // TODO flesh these out
-    Constant,
-    Variable,
+    Literal(LiteralExpression),
+    Variable(String),
     Arithmetic,
-    FunctionCall,
+    Call(CallExpression),
 }
 
 #[derive(Debug, PartialEq)]
@@ -29,7 +43,11 @@ pub struct Expression {
 #[derive(Debug, PartialEq)]
 pub enum Statement { // TODO flesh these out
     Let,
-    Expression,
+    Assignment,
+    Call,
+    Return,
+    Condition,
+    Loop,
 }
 
 #[derive(Debug, PartialEq)]
@@ -86,21 +104,38 @@ peg::parser!{
         rule unit_exp() -> Expression
             = "()" {
                 Expression{
-                    variant:  ExpressionVariant::Constant,
+                    variant:  ExpressionVariant::Literal(LiteralExpression::Unit),
                     exp_type: Some(StructuralType::Primitive(PrimitiveType::Unit)),
                 }
             }
-        rule constant_exp() -> Expression // TODO other constants, boolean, integers
+        rule literal_exp() -> Expression // TODO other literals, boolean, integers
             = unit_exp()
-        rule variable_exp() -> Expression
+        rule var_exp() -> Expression
             = n: var_name() {
                 Expression{
-                    variant: ExpressionVariant::Variable,
+                    variant:  ExpressionVariant::Variable(n),
                     exp_type: None,
                 }
             }
+        rule basic_call_exp() -> Expression
+            = n: var_name() " "*<,1> e: exp_specifier() {
+                Expression{
+                    variant:  ExpressionVariant::Call(
+                        CallExpression{name: n, argument: Box::new(e)}
+                    ),
+                    exp_type: None,
+                }
+            }
+        /* TODO UFCS
+        rule ufcs_call_exp() -> Expression
+            = e1: exp_specifier "." n: var_name() e2: tuple_exp() {
+                
+            }
+        */
+        rule call_exp() -> Expression
+            = basic_call_exp()
         rule exp_specifier() -> Expression
-            = constant_exp() / variable_exp()
+            = literal_exp() / var_exp() / call_exp()
 
         // ********************
         // RULES FOR STATEMENTS
@@ -110,12 +145,12 @@ peg::parser!{
             = "let " n: var_name() ":" t: type_specifier() "=" e: exp_specifier() ";" {
                 Statement::Let
             }
-        rule exp_stmt() -> Statement // TODO should be function call rather than just an expression
-            = e: exp_specifier() ";" {Statement::Expression}
+        rule call_stmt() -> Statement // TODO should be function call rather than just an expression
+            = e: call_exp() ";" {Statement::Call}
         rule scope() -> Vec<Statement>
             = "{" s: (stmt_specifier() *) "}" {s}
         rule stmt_specifier() -> Statement
-            = let_stmt() / exp_stmt()
+            = let_stmt() / call_stmt()
 
         // ******************************
         // RULES FOR FUNCTION DEFINITIONS
