@@ -38,16 +38,16 @@ Product types have the following form:
 
 ```
 // type itself
-Foo := \*{
+Foo := (
     label_1: Type1,
     label_2: Type2,
     ...
-}
+)
 
 ...
 
     // initialization, inferring types of bar and baz
-    let foo = \*{label_1: bar, label_2: baz, ...}
+    let foo = (label_1 = bar, label_2 = baz, ...)
 ```
 
 A product type represents a type that includes all of the constituent types.
@@ -67,40 +67,53 @@ Foo := (Type1, Type2, ...)
 The above tuple type is equivalent to the following product type:
 
 ```
-\*{
+(
     _1: Type1,
     _2: Type2,
     ...
-}
+)
+```
+
+Product types are ordered by their fields, and can be implicitly cast to a tuple
+and from a tuple with the same order (though their types are not the same).
+
+```
+let foo: (a: U32, b: U32, c: U32) = (a = 1, b = 2, c = 3);
+let bar: (U32, U32, U32) = foo; // bar = (1, 2, 3)
+let baz: (x: U32, y: U32, z: U32) = bar; // baz = (x = 1, y = 2, z = 3)
+// cannot implicitly cast from foo to bar directly
 ```
 
 An array is expressed as follows:
 
 ```
-[Type; length]
+Arr[Type, length]
 ```
 
 The above array type is equivalent to the following product type with `length`
 constituent types:
 
 ```
-\*{
+(
     _1: Type,
     _2: Type,
     ...
-}
+)
 ```
 
-Furthermore, the array can be initialized with either a constexpr or a special
-initializer function as follows:
+Furthermore, the array can be initialized as a tuple of uniform type or using
+the `map` higher order function (see generics, typing for more) as follows:
 
 ```
-    // infers type of some_const
-    let foo_const = [some_const; length]
+    // if val1, val2, val3 share the same type, foo_tuple is an array
+    let arr_tuple = (val_1, val_2, val_3);
 
-    // init_fn must have type signature (T, U32) -> (S) when array elements have
-    // type S and args has type T
-    let foo_fn = [init_fn; args; length]
+    // closure closes over state variables in initializing array
+    let n = &mut 0;
+    let arr_fn: Arr[U32, len] = ().map \|{
+        *n = *n + 1;
+        return *b;
+    };
 ```
 
 ##### Sum types
@@ -141,9 +154,9 @@ Any singleton compositional type is equivalent to the constituent type. For
 instance, all of the following types are equivalent, regardless of labels:
 
 ```
-\*{
+(
     foo: U32,
-}
+)
 ```
 
 ```
@@ -154,9 +167,9 @@ instance, all of the following types are equivalent, regardless of labels:
 
 ```
 \+{
-    bar: \*{
+    bar: (
         baz: U32,
-    },
+    ),
 }
 ```
 
@@ -165,57 +178,28 @@ instance, all of the following types are equivalent, regardless of labels:
 ```
 
 ```
-[U32; 1]
+Arr[U32; 1]
 ```
 
-Similarly, every empty compositional type is equivalent to the nullary type.
-
-### Behavioral types
-
-Behavioral types reflect how a type interacts with other types, regardless of
-the underlying data. Such interactions are defined by methods, function types
-that take the behavioral type as the first argument. In such function type
-definitions, the explicit type name of the behavioral type is replaced with
-`Self`. See the following example:
+Furthermore, a product type of any type and the unit type is equivalent to the
+same product type without the unit type. Thus, the following types are
+equivalent to the unit type:
 
 ```
-\${
-    get_size: (Self) -> (U32),
-    get_name: (Self) -> ([U8; 10]),
-}
+(((()), ()), ())
 ```
 
-### Concrete types
-
-Concrete types reflect the implementation of one or more behavioral types for an
-underlying structural type. See the following example for concrete types
-`RectangularPrism` and `Cube`:
+```
+(
+    foo: (),
+    bar: (),
+    baz: (),
+)
+```
 
 ```
-SomeStruct := \*{
-    x: U32,
-    y: U32,
-    z: U32,
-};
-
-HasVolume := \${
-    get_volume: (Self) -> (U32),
-};
-
-RectangularPrism repr := SomeStruct;
-
-RectangularPrism impl HasVolume := { // need some notation for "set of definitions", maybe \%{ ?
-    get_volume: (self: Self) -> (U32) := {
-        return self.x * self.y * self.z;
-    };
-};
-
-Cube repr := U32;
-
-Cube impl HasVolume := {
-    get_volume: (self: Self) -> (U32) := {
-        return self * self * self;
-    };
-};
+Arr[Arr[Arr[(), 100], 100], 100]
 ```
+
+Similarly, empty sum type is a special type that cannot take on any values.
 
