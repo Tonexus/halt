@@ -14,9 +14,11 @@ and returns a value of type `B`.
 ```
 // function that takes a product type of two unsigned 32 bit integers and
 // returns an unsigned 32 bit integer
-foo: (a: U32, b: U32) -> U32 := \|{
+foo: (U32, U32) -> U32 := (a, b) -> {
     ...
 }
+// function definition may additionally type right-hand side of the := as follows:
+// foo := (a: U32, b: U32) -> : U32 { ... }
 
     // foo can be called in multiple ways:
     // call on product type directly
@@ -38,6 +40,8 @@ foo: (a: U32, b: U32) -> U32 := \|{
     let out = in_1.foo in_2;
 ```
 
+Closures and mutable/copyable types?
+
 A closure `c` has type `c: A => B` if it takes an argument of type `A` and
 returns a value of type `B` while closing over some other unknown values of
 unknown types. `A => B` is shorthand for the existentially quantified generic
@@ -45,9 +49,9 @@ type `(?, (A, ?) -> B)[?]` that closes over a variable with type parameter `?`.
 (See generics for more.)
 
 ```
-foo: (a: U32) -> U32 := \|{
+foo: U32 -> U32 := a -> {
     // closes over a
-    bar: (b: bool) => U32 := \|{
+    bar: Bool => U32 := b -> {
         if b {
 	    return a;
 	} else {
@@ -67,7 +71,7 @@ is simply `A -> B`. As such, higher order functions are usually defined as
 taking closures.
 
 ```
-foo: ((a: U32, b: Arr[U32, ?]) -> Arr[U32, ?])[const ?] := \|{
+foo: ((a: U32, b: Arr[U32, ?]) -> Arr[U32, ?])[const ?] := (a, b) -> {
     // map: ((Arr[?A, C], ?A => ?B) -> Arr[?B, C])[?A, ?B, const C]
     return b.map \|{  // from type of map, compiler infers type of closure
         return x + a; // closure infers that c is an argument

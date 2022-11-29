@@ -110,7 +110,7 @@ the `map` higher order function (see generics, typing for more) as follows:
 
     // closure closes over state variables in initializing array
     let n = &mut 0;
-    let arr_fn: Arr[U32, len] = ().map \|{
+    let arr_fn: Arr{U32, len} = ().map () -> {
         *n = *n + 1;
         return *b;
     };
@@ -122,16 +122,16 @@ Sum types have the following form:
 
 ```
 // type itself
-Foo := \+{
+Foo := [
     label_1: Type1,
     label_2: Type2,
     ...
-}
+]
 
 ...
 
     // initialization (to variant label_2)
-    let foo = \+{label_1: Type1, label_2: Type2 = bar, label_3: Type3, ...};
+    let foo = [label_1: Type1, label_2: Type2 = bar, label_3: Type3, ...];
 ```
 
 
@@ -139,10 +139,10 @@ A sum type represents a type that is one of the constituent types. For example,
 the Bool primitive type can be treated as the following sum type:
 
 ```
-\+{
+[
     true:  (),
     false: (),
-}
+]
 ```
 
 Similarly, each of the pseudoprimitive data types can be represented as a sum
@@ -160,17 +160,17 @@ instance, all of the following types are equivalent, regardless of labels:
 ```
 
 ```
-\+{
+[
     foo: U32,
-}
+]
 ```
 
 ```
-\+{
+[
     bar: (
         baz: U32,
     ),
-}
+]
 ```
 
 ```
@@ -178,7 +178,7 @@ instance, all of the following types are equivalent, regardless of labels:
 ```
 
 ```
-Arr[U32; 1]
+Arr{U32; 1}
 ```
 
 Furthermore, a product type of any type and the unit type is equivalent to the
@@ -198,7 +198,7 @@ equivalent to the unit type:
 ```
 
 ```
-Arr[Arr[Arr[(), 100], 100], 100]
+Arr{Arr{Arr{(), 100}, 100}, 100}
 ```
 
 Similarly, empty sum type is a special type that cannot take on any values.

@@ -5,23 +5,22 @@ existentially quantified types.
 
 ### Universal types
 
-Universal types allow parameterized algebraic data types, generic functions, and
+Universal types allow parameterized data types, generic functions, and
 interfaces.
 
-#### Parameterized algebraic data types
+#### Parameterized data types
 
 Arrays are the most basic parameterized algebraic data type, whose parameters
 are the data type of the members and the number of members. Parameterized types
-may also take constant values as parameters.
+may also take mutabilities or constant values as parameters.
 
 #### Generic functions
 
 Universal quantification allows for functions to act on parameterized types.
 
 ```
-reduce[A, B, USize c]: (
-    (arr: Arr[A, c], init: B, fn: (A, B) => B) -> B
-)[A, B, const USize c] := \|{
+reduce{A, B, c: USize}: ((Arr{A, c}, B, (A, B) => B) -> B){A, B, c: USize} :=
+arr, init, fn -> {
     let acc = init;
     loop x from arr {
         acc = fn(x, acc);
@@ -37,20 +36,23 @@ regardless of the underlying data. Such interactions are defined by methods
 that act on the underlying data type.
 
 ```
-Interface[T] := (
+Interface{T} := (
     foo: T -> U32,
-    bar: T -> Arr[U8, 10],
-)[T];
+    bar: T -> Arr{U8, 10},
+){T};
 
-InterfaceTwo[T] := (
+// Under the hood, subinterfaces are defined for every subset of functions
+// allows "shrinking" of vtable if other functions are not used
+
+InterfaceTwo{T} := (
     baz: T -> Bool,
-)[T];
+){T};
 
 // interfaces can be combined
-InterfaceBoth[T] := (
-   one: Interface[T],
-   two: InterfaceTwo[T],
-);
+InterfaceBoth{T} := (
+   one: Interface{T},
+   two: InterfaceTwo{T},
+){T};
 ```
 
 An interface can be implemented for any type parameter as follows:
@@ -58,21 +60,21 @@ An interface can be implemented for any type parameter as follows:
 ```
 // Interface as defined above
 
-// _default refers to the interface a type is implict interface implementation
-// used, but an interface for a type may have multiple implementations
-_default: Interface[()] := (
-    foo = \|{return 42;},
-    bar = \|{return "void\n\n\n\n\n\n"},
+// _default refers to the implict interface implementation that a type uses,
+// but an interface for a type may have multiple implementations
+_default: Interface{()} := (
+    foo = () -> {return 42;},
+    bar = () -> {return "void\n\n\n\n\n\n";},
 );
 
-other: Interface[()] := (
-    foo = \|{return 0;},
-    bar = \|{return "0000000000";},
+other: Interface{()} := (
+    foo = () -> {return 0;},
+    bar = () -> {return "0000000000";},
 );
 
-_default: Interface[U32] := (
-    foo = \|{return self;},
-    bar = \|{return "number\n\n\n\n"},
+_default: Interface{U32} := (
+    foo = () -> {return self;},
+    bar = () -> {return "number\n\n\n\n";},
 );
 ```
 
@@ -94,16 +96,16 @@ nor their implementation.
 ```
 // Interface as defined above
 
-AbstractInterface := (?T, Interface[?T])[?T];
+AbstractInterface := (?T, Interface{?T}){?T};
 
 // This is equivalent to AbstractInterface := Abstr[Interface]
 // as the type Abstr is defined as follows:
 
-// Abstr[I[_]] := (?T, I[?T])[I[_], ?T];
+// Abstr{I{_}} := (?T, I{?T}){I{_}, ?T};
 
 // There is non-hiding version defined as
 
-// Concr[I[_], T] := (T, I[T])[I[_], T];
+// Concr{I{_}, T} := (T, I{T}){I{_}, T};
 ```
 
 Abstract types have syntactic sugar for calling their methods as follows:
@@ -111,8 +113,8 @@ Abstract types have syntactic sugar for calling their methods as follows:
 ```
 // Interface, _defaults, and other as defined above
 
-func: (a: Abstr[Interface]) -> U32 := \{
-    // a@b(c) is equiv to a._1.b(a._0, c)
+func: (a: Abstr{Interface}) -> U32 := \{
+    // a@b(c) is equivalent to a._1.b(a._0, c)
     return a@foo();
 };
 
