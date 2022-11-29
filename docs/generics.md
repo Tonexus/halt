@@ -73,8 +73,8 @@ other: Interface{()} := (
 );
 
 _default: Interface{U32} := (
-    foo = () -> {return self;},
-    bar = () -> {return "number\n\n\n\n";},
+    foo = self -> {return self;},
+    bar = self -> {return "number\n\n\n\n";},
 );
 ```
 
