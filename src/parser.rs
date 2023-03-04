@@ -1,7 +1,4 @@
-use super::ast::{
-    Definition, TypeDef, ConstDef, TypeExpr, ValueExpr, ExprVariant, LitVariant,
-    BinOpVariant, UnOpVariant, Closure, Statement,
-};
+use super::ast::*;
 
 peg::parser!{
     pub grammar program_parser() for str {
@@ -49,15 +46,13 @@ peg::parser!{
         // OTHER HELPER RULES
         // ******************
 
-        // single whitespace
-        rule _ = quiet!{[' ' | '\n' | '\t']}
-        // 1 or 0 whitespace
-        rule __ = quiet!{_?}
+        // 1 or 0 space (all other whitespace already removed)
+        rule _ = quiet!{[' ']?}
         // valid characters in variable names
         rule name_char() = ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']
         // rule for type annotation/casting
         rule type_annot() -> TypeExpr =
-            __ ":" __ t: type_expr() {t}
+            _ ":" _ t: type_expr() {t}
 
         // *******************************
         // RULES FOR TOP-LEVEL DEFINITIONS
@@ -65,12 +60,12 @@ peg::parser!{
 
         // collect all top-level definitions
         pub rule defs() -> Vec<Definition> =
-            (d: (type_def() / const_def()) __ ";" __ {d})*
+            (_ d: (type_def() / const_def()) _ ";" _ {d})*
         // definition of a type
         rule type_def() -> Definition =
             n: type_name()
-            o: ("{" __ l: (univ_type_name() ++ (__ "," __)) __ "}" {l})?
-            __ ":=" __
+            o: ("{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l})?
+            _ ":=" _
             t: type_expr() {
                 Definition::Type(TypeDef{
                     name:   n,
@@ -83,7 +78,7 @@ peg::parser!{
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            n: value_name() __ o: type_annot()? __ ":=" __ v: value_expr() {
+            n: value_name() _ o: type_annot()? _ ":=" _ v: value_expr() {
                 Definition::Const(ConstDef{
                     name: n,
                     type_expr: o,
@@ -99,7 +94,7 @@ peg::parser!{
         // type expressions
         pub rule type_expr() -> TypeExpr = precedence!{
             // function type is only binary op
-            t1: (@) __ "->" __ t2: @ {TypeExpr::Function(Box::new(t1), Box::new(t2))}
+            t1: (@) _ "->" _ t2: @ {TypeExpr::Function(Box::new(t1), Box::new(t2))}
             --
             // atoms
             t: univ_type() {t}
@@ -112,11 +107,11 @@ peg::parser!{
         }
         // label type pair helper
         rule label_type_pair() -> (String, TypeExpr) =
-            n: label_name() __ ":" __ t: type_expr() {(n, t)}
+            n: label_name() _ ":" _ t: type_expr() {(n, t)}
         // type variable (may be generic)
         rule variable_type() -> TypeExpr =
             n: type_name()
-            o: ("{" __ l: (type_expr() ++ (__ "," __)) __ "}" {l})? {
+            o: ("{" _ l: (type_expr() ++ (_ "," _)) _ ("," _)? "}" {l})? {
                 TypeExpr::Variable(
                     n,
                     match o {
@@ -133,22 +128,22 @@ peg::parser!{
             n: exis_type_name() {TypeExpr::Existential(n.to_string())}
         // tuple type (product with implcit field names)
         rule tuple_type() -> TypeExpr =
-            "(" __ t: (type_expr() ** (__ "," __)) __ ")" {
+            "(" _ t: (type_expr() ** (_ "," _)) _ ("," _)? ")" {
                 TypeExpr::Tuple(t)
             }
         // struct type (product with explicit field names)
         rule struct_type() -> TypeExpr =
-            "(" __ l: (label_type_pair() ++ (__ "," __)) __ ")" {
+            "(" _ l: (label_type_pair() ++ (_ "," _)) _ ("," _)? ")" {
                 TypeExpr::Struct(l)
             }
         // choice type (sum with implcit tag names)
         rule choice_type() -> TypeExpr =
-            "[" __ t: (type_expr() ** (__ "," __)) __ "]" {
+            "[" _ t: (type_expr() ** (_ "," _)) _ ("," _)? "]" {
                 TypeExpr::Choice(t)
             }
         // tagged type (product with explicit tag names)
         rule tagged_type() -> TypeExpr =
-            "[" __ l: (label_type_pair() ++ (__ "," __)) __ "]" {
+            "[" _ l: (label_type_pair() ++ (_ "," _)) _ ("," _)? "]" {
                 TypeExpr::Tagged(l)
             }
 
@@ -165,14 +160,14 @@ peg::parser!{
                 ),
                 type_expr: Some(t),
             }}
-            e: @ __ "&" { ValueExpr {
+            e: @ _ "&" { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Ref,
                     Box::new(e),
                 ),
                 type_expr: None,
             }}
-            e: @ __ "$" { ValueExpr {
+            e: @ _ "$" { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Deref,
                     Box::new(e),
@@ -181,21 +176,21 @@ peg::parser!{
             }}
             --
             // prefix positive, negative, and not
-            "+" __ e: @ { ValueExpr {
+            "+" _ e: @ { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Pos,
                     Box::new(e),
                 ),
                 type_expr: None,
             }}
-            "-" __ e: @ { ValueExpr {
+            "-" _ e: @ { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Neg,
                     Box::new(e),
                 ),
                 type_expr: None,
             }}
-            "!" __ e: @ { ValueExpr {
+            "!" _ e: @ { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Not,
                     Box::new(e),
@@ -204,7 +199,7 @@ peg::parser!{
             }}
             --
             // exponent and logarithm TODO: check associativity
-            e1: (@) __ "^" __ e2: @ { ValueExpr{
+            e1: (@) _ "^" _ e2: @ { ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Pow,
                     Box::new(e1),
@@ -212,7 +207,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "@" __ e2: @ { ValueExpr{
+            e1: (@) _ "@" _ e2: @ { ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Log,
                     Box::new(e1),
@@ -222,7 +217,7 @@ peg::parser!{
             }}
             --
             // multiplication, division, and modulo
-            e1: (@) __ "*" __ e2: @ { ValueExpr {
+            e1: (@) _ "*" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Mul,
                     Box::new(e1),
@@ -230,7 +225,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "/" __ e2: @ { ValueExpr {
+            e1: (@) _ "/" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Div,
                     Box::new(e1),
@@ -238,7 +233,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "%" __ e2: @ { ValueExpr {
+            e1: (@) _ "%" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Mod,
                     Box::new(e1),
@@ -248,7 +243,7 @@ peg::parser!{
             }}
             --
             // addition and subtraction
-            e1: (@) __ "+" __ e2: @ { ValueExpr {
+            e1: (@) _ "+" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Add,
                     Box::new(e1),
@@ -256,7 +251,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "-" __ e2: @ { ValueExpr {
+            e1: (@) _ "-" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Sub,
                     Box::new(e1),
@@ -266,7 +261,7 @@ peg::parser!{
             }}
             --
             // comparison / shift
-            e1: (@) __ ">" __ e2: @ {ValueExpr{
+            e1: (@) _ ">" _ e2: @ {ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Gt,
                     Box::new(e1),
@@ -274,7 +269,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "<" __ e2: @ {ValueExpr{
+            e1: (@) _ "<" _ e2: @ {ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Lt,
                     Box::new(e1),
@@ -284,7 +279,7 @@ peg::parser!{
             }}
             --
             // equality
-            e1: (@) __ "==" __ e2: @ { ValueExpr {
+            e1: (@) _ "==" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Equ,
                     Box::new(e1),
@@ -292,7 +287,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) __ "!=" __ e2: @ { ValueExpr {
+            e1: (@) _ "!=" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Neq,
                     Box::new(e1),
@@ -302,7 +297,7 @@ peg::parser!{
             }}
             --
             // and
-            e1: (@) __ "/\\" __ e2: @ { ValueExpr{
+            e1: (@) _ "/\\" _ e2: @ { ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::And,
                     Box::new(e1),
@@ -312,7 +307,7 @@ peg::parser!{
             }}
             --
             // or
-            e1: (@) __ "\\/" __ e2: @ { ValueExpr{
+            e1: (@) _ "\\/" _ e2: @ { ValueExpr{
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Or,
                     Box::new(e1),
@@ -322,7 +317,7 @@ peg::parser!{
             }}
             --
             // function application (right associative)
-            e1: @ __ e2: (@) { ValueExpr {
+            e1: @ _ e2: (@) { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Call,
                     Box::new(e1),
@@ -365,7 +360,7 @@ peg::parser!{
             }}
         // tuple expressions
         rule tuple_expr() -> ValueExpr =
-            "(" __ l: (value_expr() ** (__ "," __)) __ ")" {ValueExpr{
+            "(" _ l: (value_expr() ** (_ "," _)) _ ("," _)? ")" {ValueExpr{
                 variant:  ExprVariant::Tuple(l),
                 type_expr: None,
             }}
