@@ -119,6 +119,20 @@ peg::parser!{
         // user defined type names
         rule type_name() -> String =
             n: $(['A'..='Z']['A'..='Z' | 'a'..='z' | '0'..='9']*) {n.to_string()}
+        // user defined universal type names
+        rule univ_type_name() -> String =
+            n: $(type_name() "!") {n.to_string()}
+        // user defined existential type names
+        rule exis_type_name() -> String =
+            n: $(type_name() "?") {n.to_string()}
+
+        // ******************
+        // OTHER HELPER RULES
+        // ******************
+
+        // rule for type annotation/casting
+        rule type_annot() -> TypeExpr =
+            ":" t: type_expr() {t}
 
         // *******************************
         // RULES FOR TOP-LEVEL DEFINITIONS
@@ -130,9 +144,7 @@ peg::parser!{
         // definition of a type
         rule type_def() -> Definition =
             n: type_name()
-            o: ("{" l: ($(univ_type()) ++ ",") "}" {
-                l.into_iter().map(|s| s.to_string()).collect()
-            })?
+            o: ("{" l: (univ_type_name() ++ ",") "}" {l})?
             ":="
             t: type_expr() {
                 Definition::Type(TypeDef{
@@ -146,12 +158,10 @@ peg::parser!{
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            //n: value_name() o: (":" t: type_expr() {t})? ":=" v: value_expr() {
-            n: value_name() ":=" v: value_expr() {
+            n: value_name() o: type_annot()? ":=" v: value_expr() {
                 Definition::Const(ConstDef{
                     name: n,
-                    //type_expr: o,
-                    type_expr: None,
+                    type_expr: o,
                     type_params: Vec::new(), // TODO fix once decide syntax
                     expr: v,
                 })
@@ -162,7 +172,7 @@ peg::parser!{
         // **************************
 
         // type expressions
-        rule type_expr() -> TypeExpr = precedence!{
+        pub rule type_expr() -> TypeExpr = precedence!{
             // function type is only binary op
             t1: (@) "->" t2: @ {TypeExpr::Function(Box::new(t1), Box::new(t2))}
             --
@@ -175,7 +185,7 @@ peg::parser!{
             t: choice_type() {t}
             t: tagged_type() {t}
         }
-        // label type pair
+        // label type pair helper
         rule label_type_pair() -> (String, TypeExpr) =
             n: label_name() ":" t: type_expr() {(n, t)}
         // type variable (may be generic)
@@ -192,10 +202,10 @@ peg::parser!{
             }
         // universal type variable
         rule univ_type() -> TypeExpr =
-            n: $(type_name() "!") {TypeExpr::Universal(n.to_string())}
+            n: univ_type_name() {TypeExpr::Universal(n.to_string())}
         // existential type variable
         rule exis_type() -> TypeExpr =
-            n: $(type_name() "?") {TypeExpr::Existential(n.to_string())}
+            n: exis_type_name() {TypeExpr::Existential(n.to_string())}
         // tuple type (product with implcit field names)
         rule tuple_type() -> TypeExpr =
             "(" t: (type_expr() ** ",") ")" {
@@ -221,9 +231,9 @@ peg::parser!{
         // RULES FOR EXPRESSIONS
         // *********************
 
-        rule value_expr() -> ValueExpr = precedence!{
+        pub rule value_expr() -> ValueExpr = precedence!{
             // type annotation / cast
-            e: @ ":" t: type_expr() {ValueExpr{
+            e: @ t: type_annot() {ValueExpr{
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Cast,
                     Box::new(e),
@@ -267,7 +277,6 @@ peg::parser!{
             e: variable_expr() {e}
             e: tuple_expr() {e}
         }
-
         // value variable
         rule variable_expr() -> ValueExpr =
             n: value_name() {
