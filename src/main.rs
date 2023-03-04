@@ -1,16 +1,43 @@
-
 #[derive(Debug, PartialEq)]
-pub enum PrimitiveType {
-    Unit,
+pub enum Definition {
+    Type(TypeVar),
+    Value(ValueVar),
 }
 
 #[derive(Debug, PartialEq)]
-pub enum StructuralType {
-    Product(Vec<StructuralType>), // TODO add labels/field names
-    Sum(Vec<StructuralType>),     // TODO add labels/variant names
-    Primitive(PrimitiveType),
+pub struct TypeVar {
+    name:   String,
+    params: Vec<String>,
+    expr:   TypeExpr,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ValueVar {
+    name:        String,
+    type_expr:   Option<TypeExpr>,
+    type_params: Vec<String>,
+    const_expr:  Option<ValueExpr>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TypeExpr {
     Named(String),
+    Universal(String),
+    Existential(String),
+    Generic((String, Vec<TypeExpr>)),
+    Tuple(Vec<TypeExpr>),
+    Struct(Vec<(String, TypeExpr)>),
+    Choice(Vec<TypeExpr>),
+    Tagged(Vec<(String, TypeExpr)>),
+    Function(Box<(TypeExpr, TypeExpr)>),
 }
+
+#[derive(Debug, PartialEq)]
+pub struct ValueExpr {
+    variant:   ExpressionVariant,
+    type_expr: Option<TypeExpr>,
+}
+
 
 #[derive(Debug, PartialEq)]
 pub enum LiteralExpression {
@@ -34,17 +61,18 @@ pub enum ExpressionVariant { // TODO flesh these out
     Call(CallExpression),
 }
 
+
 #[derive(Debug, PartialEq)]
 pub struct Expression {
     variant:  ExpressionVariant,
-    exp_type: Option<StructuralType> // TODO: one day, generics...
+    exp_type: Option<TypeExpr> // TODO: one day, generics...
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Statement { // TODO flesh these out
     Let,
     Assignment,
-    Call,
+    Call, // TODO in AST check call must have at least one mutable argument
     Return,
     Condition,
     Loop,
@@ -53,8 +81,8 @@ pub enum Statement { // TODO flesh these out
 #[derive(Debug, PartialEq)]
 pub struct Function {
     name:    String,
-    params:  Vec<(String, StructuralType)>,
-    returns: StructuralType,
+    params:  Vec<(String, TypeExpr)>,
+    returns: TypeExpr,
     body:    Vec<Statement>,
 }
 
@@ -74,28 +102,65 @@ peg::parser!{
         // user defined variable names
         rule var_name() -> String // TODO later check for leading _ in var name
             = n: (['a'..='z' | '0'..='9' | '_']+) {n.into_iter().collect()}
+        // user defined label names for product fields or sum tags
+        rule label_name() -> String
+            = n: (['a'..='z' | '0'..='9' | '_']+) {n.into_iter().collect()}
         // user defined type names
         rule type_name() -> String
             = n: (['A'..='Z' | 'a'..='z' | '0'..='9']+) {n.into_iter().collect()}
 
-        // ******************************
-        // RULES FOR DATA TYPE SPECIFIERS
-        // ******************************
+        // **************************
+        // RULES FOR TYPE EXPRESSIONS
+        // **************************
 
-        rule unit_type() -> StructuralType
-            = "()" {StructuralType::Primitive(PrimitiveType::Unit)}
-        rule prim_type() -> StructuralType // TODO other primitive types
-            = unit_type()
-        rule named_type() -> StructuralType
-            = t: type_name() {StructuralType::Named(t)}
-        // tuple type specifiers
-        rule tuple_type() -> StructuralType
-            = "(" t: (type_specifier() ** ",") ")" {
-                StructuralType::Product(t)
+        // type expressions
+        rule type_expr() -> TypeExpr = precedence!{
+            // function type
+            t1: (@) "->" t2: @ {TypeExpr::Function(Box::new((t1, t2)))}
+            --
+            t: nonfunc_type() {t}
+        }
+        // any non-function base type (to avoid recursion)
+        rule nonfunc_type() -> TypeExpr
+            = univ_type() / exis_type() / generic_type() / named_type()
+            / tuple_type() / struct_type() / choice_type() / tagged_type()
+        // label type pair
+        rule label_type_pair() -> (String, TypeExpr)
+            = n: label_name() ":" t: type_expr() {(n, t)}
+        // named type
+        rule named_type() -> TypeExpr
+            = n: type_name() {TypeExpr::Named(n)}
+        // universal type variable
+        rule univ_type() -> TypeExpr
+            = n: type_name() "!" {TypeExpr::Universal(n)}
+        // existential type variable
+        rule exis_type() -> TypeExpr
+            = n: type_name() "?" {TypeExpr::Existential(n)}
+        // generic named type
+        rule generic_type() -> TypeExpr
+            = n: type_name() "{" l: (type_expr() ** ",") "}" {
+                TypeExpr::Generic((n, l))
             }
-        // type specifiers, including anonymous structural types
-        rule type_specifier() -> StructuralType
-            = prim_type() / named_type() / tuple_type() // TODO add other structural types
+        // tuple type (product with implcit field names)
+        rule tuple_type() -> TypeExpr
+            = "(" t: (type_expr() ** ",") ")" {
+                TypeExpr::Tuple(t)
+            }
+        // struct type (product with explicit field names)
+        rule struct_type() -> TypeExpr
+            = "(" l: (label_type_pair() ++ ",") ")" {
+                TypeExpr::Struct(l)
+            }
+        // choice type (sum with implcit tag names)
+        rule choice_type() -> TypeExpr
+            = "[" t: (type_expr() ** ",") "]" {
+                TypeExpr::Choice(t)
+            }
+        // tagged type (product with explicit tag names)
+        rule tagged_type() -> TypeExpr
+            = "[" l: (label_type_pair() ++ ",") "]" {
+                TypeExpr::Struct(l)
+            }
 
         // *********************
         // RULES FOR EXPRESSIONS
@@ -105,7 +170,7 @@ peg::parser!{
             = "()" {
                 Expression{
                     variant:  ExpressionVariant::Literal(LiteralExpression::Unit),
-                    exp_type: Some(StructuralType::Primitive(PrimitiveType::Unit)),
+                    exp_type: Some(TypeExpr::Tuple(Vec::new())),
                 }
             }
         rule literal_exp() -> Expression // TODO other literals, boolean, integers
@@ -142,7 +207,7 @@ peg::parser!{
         // ********************
 
         rule let_stmt() -> Statement
-            = "let " n: var_name() ":" t: type_specifier() "=" e: exp_specifier() ";" {
+            = "let " n: var_name() ":" t: type_expr() "=" e: exp_specifier() ";" {
                 Statement::Let
             }
         rule call_stmt() -> Statement // TODO should be function call rather than just an expression
@@ -152,19 +217,19 @@ peg::parser!{
         rule stmt_specifier() -> Statement
             = let_stmt() / call_stmt()
 
-        // ******************************
-        // RULES FOR FUNCTION DEFINITIONS
-        // ******************************
+        // *******************************
+        // RULES FOR TOP-LEVEL DEFINITIONS
+        // *******************************
 
         // one parameter in a parameter list
-        rule param() -> (String, StructuralType)
-            = n: var_name() ":" t: type_specifier() {(n, t)}
+        rule param() -> (String, TypeExpr)
+            = n: var_name() ":" t: type_expr() {(n, t)}
         // parameter list for function definition
-        rule params() -> Vec<(String, StructuralType)>
+        rule params() -> Vec<(String, TypeExpr)>
             = "(" p: (param() ** ",") ")" {p}
 
         pub rule function() -> Function
-            = "fn " name: var_name() ":" params: params() "->" returns: type_specifier() ":=" body: scope() {
+            = "fn " name: var_name() ":" params: params() "->" returns: type_expr() ":=" body: scope() {
                 Function{name, params, returns, body}
             }
     }
@@ -178,8 +243,8 @@ fn main() {
         parser::function("fn foo:(a:Int)->():={}"),
         Ok(Function{
             name: "foo".to_string(),
-            params: Vec::from([("a".to_string(), StructuralType::Named("Int".to_string()))]),
-            returns: StructuralType::Primitive(PrimitiveType::Unit),
+            params: Vec::from([("a".to_string(), TypeExpr::Named("Int".to_string()))]),
+            returns: TypeExpr::Tuple(Vec::new()),
             body: Vec::new(),
         })
     );
@@ -188,9 +253,9 @@ fn main() {
         Ok(Function{
             name: "bar".to_string(),
             params: Vec::new(),
-            returns: StructuralType::Product(Vec::from([
-                StructuralType::Named("Int".to_string()),
-                StructuralType::Named("Int".to_string()),
+            returns: TypeExpr::Tuple(Vec::from([
+                TypeExpr::Named("Int".to_string()),
+                TypeExpr::Named("Int".to_string()),
             ])),
             body: Vec::from([Statement::Let]),
         })

@@ -1,0 +1,145 @@
+~~~~~~~~~~~~~~~~~~~~~~~~~~~ TOP LEVEL ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<file> ::= <const def>*
+
+<const def> ::= <type def>;
+              | <value def>;
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~ NAMES ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<type name> ::= [A-Z][a-zA-Z0-9]*
+
+<value name> ::= [a-z][a-z0-9_]*
+
+<label name> ::= [a-z0-9_]+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~ TYPES ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<type def> ::= <type name>{<universal type>,+}? := <type expression>
+
+<type expression> ::= <type name>
+                    | <product type>
+                    | <sum type>
+                    | <function type>
+                    | <parameterized type>
+                    | <type var>
+
+<product type> ::= <tuple type>
+                 | <struct type>
+
+<tuple type> ::= (<type expression>,*)
+
+<struct type> ::= (<label name>: <type expression>,*)
+
+<sum type> ::= <choice type>
+             | <tagged union type>
+
+<choice type> ::= [<type expression>,*]
+
+<tagged union type> ::= [<label name>: <type expression>,*]
+
+<function type> ::= <type expression> -> <type expression>
+
+<parameterized type> ::= <type name>{<type expression>,+}
+
+<type var> ::= <universal type>
+             | <existential type>
+
+<universal type> ::= <type name>!
+
+<existential type> ::= <type name>?
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~ VALUES ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<value def> ::= <value name>: <type expression>? := <value expression>
+
+<value expression> ::= <value name>
+                     | <literal>
+                     | <typed expression>
+                     | <anonymous function>
+                     | <product expression>
+                     | <sum expression>
+                     | <binary op expression>
+                     | <function application expression>
+
+<literal> ::= <string literal>
+            | <numeric literal>
+            | <ascii literal>
+
+<string literal> ::= "[any except unescaped]*"
+
+<numeric literal> ::= [0-9]+.[0-9]*?i?
+
+<ascii literal> ::= '[any except unescaped]'
+
+<typed expression> ::= <value expression>: <type expression>
+
+<anonymous function> ::= (<value name>: <type expression>?,*) -> <type expression>:? {<statement>*}
+
+<product expression> ::= <tuple expression>
+                       | <struct expression>
+
+<tuple expression> ::= (<value expression>,*)
+
+<struct expression> ::= (<label name> = <value expression>, *)
+
+<sum expression> ::= <choice expression>
+                   | <tagged union expression>
+
+<choice expression> ::= [<value expression>]
+
+<tagged union expression> ::= [<label name> = <value expression>]
+
+<binary op expression> ::= <add expression>
+                         | <sub expression>
+                         .
+                         .
+                         .
+
+<add expression> ::= <value expression> + <value expression>
+
+<function application expression> ::= <value expresion> <value expression>
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~ STATEMENTS ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+<statement> ::= <value expression>;
+              | <let statement>;
+              | <assignment statement>;
+              | <return statement>;
+              | <break statement>;
+              | <continue statement>;
+              | <match statement>
+              | <loop statement>
+              | <with/overload statement>
+
+<let statement> ::= let <value name>: <type expression>? = <value expression>?
+
+~~~ Allow tuples ~~~
+
+<assignment statement> ::= <direct assignment>
+                         | <reference assignment>
+
+<direct assignment> ::= <value name>: <type expression>? = <value expression>
+
+<reference assignment> ::= *<value expression> = <value expression>
+
+<return statement> ::= return <value expression>?
+
+<break statement> ::= break
+
+<continue statement> ::= continue
+
+<match statement> ::= match <value expression> <match branch>*
+
+<match branch> ::= <to branch>
+                 | <else branch>
+
+<to branch> ::= to <matchable> {<statement>*}
+
+<matchable> ::= <label name> = <value name>: <type expression>?
+
+<else branch> ::= else {<statement>*}
+
+<loop statement> ::= loop <value name>: <type expression>? from <value expression> {<statement>*}
+
+<with statement> :: with <value expression> {<statement>*}
