@@ -2,35 +2,33 @@
 
 // enums/untagged unions/sum types
 
-def type BoolLike = {|
+Bool := [
     true: (),
     false: (),
-}
+]
 
 // some of rust's useful basic generics
-def type Res(A, B) = {|
-    ok: A,
-    er: B,
-}
+Result{A!, B!} := [
+    okay: A!,
+    fail: B!,
+]
 
-def type Opt(A) = {|
-    some: A,
+Option{A!} := [
+    some: A!,
     none: (),
-}
+]
 
 // structs/product types
 // note that tuples are structs: (A, B, C) is equivalent to {& 0:A, 1:B, 2:C}
-def type Point3D = {&
+Point3D := (
     x: Float,
     y: Float,
     z: Float,
-}
+)
 
-def type FullName wrt {
-    import ascii;
-} = {&
-    first:  ascii::Str,
-    middle: ascii::Str,
-    last:   ascii::Str,
-}
+FullName := (
+    first:  Ascii,
+    middle: Ascii,
+    last:   Ascii,
+)
 
