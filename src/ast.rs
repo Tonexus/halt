@@ -83,7 +83,7 @@ pub enum BinOpVariant {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum UnOpVariant {
+pub enum UnOpVariant { // TODO add . field access and .. UFCS
     Cast,
     Ref,
     Deref,
@@ -101,16 +101,66 @@ pub struct Closure {
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
-    Expr, // TODO in AST check call must have at least one mutable argument
-    Def,
-    Let,
-    Assign,
-    Return,
+    Expr(ValueExpr),
+    Def(Definition),
+    Let(DeclPattern, Option<ValueExpr>),
+    Assign(AsgnPattern, ValueExpr), // TODO replace string with place
+    Return(ValueExpr),
     Break,
     Continue,
-    Match,
-    If,
-    Loop,
-    With,
+    Match(ValueExpr, Vec<ToBranch>, Vec<Statement>),
+    If(ValueExpr, Vec<Statement>, Vec<Statement>),
+    Loop(DeclPattern, ValueExpr, Vec<Statement>),
+    With(Vec<Statement>),
+}
+
+// TODO consider ref/derefs in patterns?
+#[derive(Debug, PartialEq)]
+pub struct AsgnPattern {
+    pub variant:   AsgnPatVariant,
+    pub type_expr: Option<TypeExpr>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AsgnPatVariant {
+    Variable(String),
+    Deref(ValueExpr),
+    Tuple(Vec<AsgnPattern>),
+    Struct(Vec<(String, AsgnPattern)>),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DeclPattern {
+    pub variant:   DeclPatVariant,
+    pub type_expr: Option<TypeExpr>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum DeclPatVariant {
+    Variable(String),
+    Tuple(Vec<DeclPattern>),
+    Struct(Vec<(String, DeclPattern)>),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ToBranch {
+    pattern: Vec<ToPattern>,
+    block:   Vec<Statement>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ToPattern {
+    pub variant:   ToPatVariant,
+    pub type_expr: Option<TypeExpr>,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ToPatVariant {
+    Const(ValueExpr), // must be literal or "inline" expression
+    Variable(String),
+    Tuple(Vec<ToPattern>),
+    Struct(Vec<(String, ToPattern)>),
+    Choice(Box<ToPattern>),
+    Tagged(String, Box<ToPattern>),
 }
 

@@ -24,6 +24,7 @@ peg::parser!{
         // KEYWORDS
         // ********
 
+        // TODO have true/false/i/inline/yield/enter just be unoverwritable vars?
         rule kw_break()    = "break"
         rule kw_continue() = "continue"
         rule kw_else()     = "else"
@@ -40,26 +41,6 @@ peg::parser!{
         rule kw() = (kw_break() / kw_continue() / kw_else() / kw_false() /
             kw_from() / kw_i() / kw_if() / kw_let() / kw_loop() / kw_match() /
             kw_return() / kw_to() / kw_true()) !name_char()
-
-        // ******************
-        // OTHER HELPER RULES
-        // ******************
-
-        // rule for type annotation/casting
-        rule type_annot() -> TypeExpr =
-            _ ":" _ t: type_expr() {t}
-        // label/type pair helper
-        rule label_type_pair() -> (String, TypeExpr) =
-            n: label_name() t: type_annot() {(n, t)}
-        // label/value pair helper
-        rule label_value_pair() -> (String, ValueExpr) =
-            n: label_name() _ "=" _ v: value_expr() {(n, v)}
-        // optionally typed value name helper
-        rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
-            n: value_name() o: type_annot()? {(n, o)}
-        // get brace-enclosed universal type variable names
-        rule type_params() -> (Vec<String>) =
-            _ "{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l}
 
         // ********
         // LITERALS
@@ -81,6 +62,26 @@ peg::parser!{
         // string TODO fix escape sequences
         rule literal_string() -> String =
             "\"" s: $(([^'\"'] / "\\\"")*) "\"" { s.to_string() }
+
+        // *************
+        // MISCELLANEOUS
+        // *************
+
+        // rule for type annotation/casting
+        rule type_annot() -> TypeExpr =
+            _ ":" _ t: type_expr() {t}
+        // label/type pair
+        rule label_type_pair() -> (String, TypeExpr) =
+            n: label_name() t: type_annot() {(n, t)}
+        // label/value pair
+        rule label_value_pair() -> (String, ValueExpr) =
+            n: label_name() _ "=" _ v: value_expr() {(n, v)}
+        // optionally typed value name
+        rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
+            n: value_name() o: type_annot()? {(n, o)}
+        // brace-enclosed universal type variable names
+        rule type_params() -> (Vec<String>) =
+            _ "{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l}
 
         // ************************
         // PROGRAMMER-DEFINED NAMES
@@ -516,7 +517,15 @@ peg::parser!{
             expr_stmt()
         // return statement
         rule return_stmt() -> Statement =
-            kw_return() _ o: (e: value_expr() _ {e}) ";" { Statement::Return }
+            kw_return() _ o: (e: value_expr() _ {e})? ";" { Statement::Return(
+                match o {
+                    Some(e) => e,
+                    None    => ValueExpr {
+                        variant:   ExprVariant::Tuple(Vec::new()),
+                        type_expr: None, // TODO set to unit type
+                    },
+                }
+            )}
         // break statement
         rule break_stmt() -> Statement =
             kw_break() _ ";" { Statement::Break }
@@ -525,34 +534,51 @@ peg::parser!{
             kw_continue() _ ";" { Statement::Continue }
         // match statement (is not exhaustive)
         rule match_stmt() -> Statement =
-            kw_match() _ value_expr() _ (to_branch() ++ _) (_ else_branch())? { Statement::Match }
+            kw_match() _ value_expr() _ (to_branch() ++ _) (_ else_branch())? {
+                //Statement::Match
+                Statement::Break
+            }
         // if statement
         rule if_stmt() -> Statement =
-            kw_if() _ value_expr() _ block() (_ else_branch())? { Statement::If }
+            kw_if() _ e: value_expr() _ l1: block() o: (_ l2: else_branch() {l2})? {
+                Statement::If(e, l1, match o {
+                    Some(l2) => l2,
+                    None     => Vec::new(),
+                })
+            }
         // to branch of a match statement TODO expr must const TODO sum destructure
         rule to_branch() -> () =
             kw_to() _ (value_expr() / ("[" _ label_name() _ "=" _ value_name() _ "]")) _ block()
         // else branch of match or if
-        rule else_branch() -> () =
-            kw_else() _ (block() / match_stmt() / if_stmt())
+        rule else_branch() -> Vec<Statement> =
+            kw_else() _ l: (block() / (s: (match_stmt() / if_stmt()) {
+                Vec::from([s])
+            })) {l}
         rule loop_stmt() -> Statement =
             kw_loop() _ n: opt_typed_value_name() _ kw_from() _ value_expr() _
-            block() { Statement::Loop }
+            block() {
+                //Statement::Loop
+                Statement::Break
+            }
         // let statement TODO: allow no initialize?
         rule let_stmt() -> Statement =
             kw_let() _ n: opt_typed_value_name() _ "=" _ e: value_expr()
             _ ";" {
-                Statement::Let
+                //Statement::Let
+                Statement::Break
             }
         // local definition statement
         rule def_stmt() -> Statement =
-            d: def() { Statement::Def }
+            d: def() { Statement::Def(d) }
         // assignment statement TODO: allow more interesting LHS
         rule assign_stmt() -> Statement =
-            n: value_name() _ "=" _ e: value_expr() _ ";" { Statement::Assign }
+            n: value_name() _ "=" _ e: value_expr() _ ";" {
+                //Statement::Assign
+                Statement::Break
+            }
         // expression statement
         rule expr_stmt() -> Statement =
-            e: value_expr() _ ";" { Statement::Expr }
+            e: value_expr() _ ";" { Statement::Expr(e) }
     }
 }
 
