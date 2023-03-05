@@ -53,6 +53,15 @@ peg::parser!{
         // rule for type annotation/casting
         rule type_annot() -> TypeExpr =
             _ ":" _ t: type_expr() {t}
+        // label/type pair helper
+        rule label_type_pair() -> (String, TypeExpr) =
+            n: label_name() t: type_annot() {(n, t)}
+        // label/value pair helper
+        rule label_value_pair() -> (String, ValueExpr) =
+            n: label_name() _ "=" _ v: value_expr() {(n, v)}
+        // optionally typed value name helper
+        rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
+            n: value_name() o: type_annot()? {(n, o)}
 
         // *******************************
         // RULES FOR TOP-LEVEL DEFINITIONS
@@ -60,14 +69,16 @@ peg::parser!{
 
         // collect all top-level definitions
         pub rule defs() -> Vec<Definition> =
-            (_ d: (type_def() / const_def()) _ ";" _ {d})*
+            _ d: (def() **  _) _ {d}
+        rule def() -> Definition = type_def() / const_def()
         // definition of a type
         rule type_def() -> Definition =
             n: type_name()
             o: ("{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l})?
             _ ":=" _
-            t: type_expr() {
-                Definition::Type(TypeDef{
+            t: type_expr()
+            _ ";" {
+                Definition::Type(TypeDef {
                     name:   n,
                     params: match o {
                         Some(l) => l,
@@ -78,7 +89,7 @@ peg::parser!{
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            n: value_name() _ o: type_annot()? _ ":=" _ v: value_expr() {
+            n: value_name() _ o: type_annot()? _ ":=" _ v: value_expr() _ ";" {
                 Definition::Const(ConstDef{
                     name: n,
                     type_expr: o,
@@ -105,9 +116,6 @@ peg::parser!{
             t: choice_type() {t}
             t: tagged_type() {t}
         }
-        // label type pair helper
-        rule label_type_pair() -> (String, TypeExpr) =
-            n: label_name() _ ":" _ t: type_expr() {(n, t)}
         // type variable (may be generic)
         rule variable_type() -> TypeExpr =
             n: type_name()
@@ -199,7 +207,7 @@ peg::parser!{
             }}
             --
             // exponent and logarithm TODO: check associativity
-            e1: (@) _ "^" _ e2: @ { ValueExpr{
+            e1: (@) _ "^" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Pow,
                     Box::new(e1),
@@ -207,7 +215,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) _ "@" _ e2: @ { ValueExpr{
+            e1: (@) _ "@" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Log,
                     Box::new(e1),
@@ -261,7 +269,7 @@ peg::parser!{
             }}
             --
             // comparison / shift
-            e1: (@) _ ">" _ e2: @ {ValueExpr{
+            e1: (@) _ ">" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Gt,
                     Box::new(e1),
@@ -269,7 +277,7 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
-            e1: (@) _ "<" _ e2: @ {ValueExpr{
+            e1: (@) _ "<" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Lt,
                     Box::new(e1),
@@ -297,7 +305,7 @@ peg::parser!{
             }}
             --
             // and
-            e1: (@) _ "/\\" _ e2: @ { ValueExpr{
+            e1: (@) _ "/\\" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::And,
                     Box::new(e1),
@@ -307,7 +315,7 @@ peg::parser!{
             }}
             --
             // or
-            e1: (@) _ "\\/" _ e2: @ { ValueExpr{
+            e1: (@) _ "\\/" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Or,
                     Box::new(e1),
@@ -337,31 +345,60 @@ peg::parser!{
         // value variable
         rule variable_expr() -> ValueExpr =
             n: value_name() {
-                ValueExpr{
+                ValueExpr {
                     variant:   ExprVariant::Variable(n),
                     type_expr: None,
                 }
             }
-        // boolean literals
+        // boolean literal
         rule literal_bool_expr() -> ValueExpr =
-            ("true" {ValueExpr{
+            ("true" { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Bool(true)),
                 type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
             }}) /
-            ("false" {ValueExpr{
+            ("false" { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Bool(false)),
                 type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
             }})
-        // ascii string literals
+        // ascii string literal
         rule literal_ascii_expr() -> ValueExpr =
-            "\"" s: $(([^'\"'] / "\\\"")*) "\"" {ValueExpr{
+            "\"" s: $(([^'\"'] / "\\\"")*) "\"" { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
                 type_expr: Some(TypeExpr::Variable("Ascii".to_string(), Vec::new())),
             }}
-        // tuple expressions
+        // tuple expression
         rule tuple_expr() -> ValueExpr =
-            "(" _ l: (value_expr() ** (_ "," _)) _ ("," _)? ")" {ValueExpr{
-                variant:  ExprVariant::Tuple(l),
+            "(" _ l: (value_expr() ** (_ "," _)) _ ("," _)? ")" { ValueExpr {
+                variant:   ExprVariant::Tuple(l),
+                type_expr: None,
+            }}
+        // struct expression TODO: allow typed fields?
+        rule struct_expr() -> ValueExpr =
+            "(" _ l: (label_value_pair() ** (_ "," _)) _ ("," _)? ")" { ValueExpr {
+                variant:   ExprVariant::Struct(l),
+                type_expr: None,
+            }}
+        // choice expression TODO: allow types to imply position?
+        rule choice_expr() -> ValueExpr =
+            "[" _ e: value_expr() _ "]" { ValueExpr {
+                variant:   ExprVariant::Choice(Box::new(e)),
+                type_expr: None,
+            }}
+        // tagged expression TODO: allow typed tags?
+        rule tagged_expr() -> ValueExpr =
+            "[" _ e: label_value_pair() _ "]" { ValueExpr {
+                variant:   ExprVariant::Tagged(e.0, Box::new(e.1)),
+                type_expr: None,
+            }}
+        // closure expression (functions are closures with no closed-over vars)
+        rule closure_expr() -> ValueExpr =
+            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->" _
+            o: (t: type_expr() _ ":" _ {t})? b: block() { ValueExpr {
+                variant:   ExprVariant::Closure(Box::new(Closure {
+                    params:  l,
+                    returns: o,
+                    body:    b,
+                })),
                 type_expr: None,
             }}
         /* TODO UFCS
@@ -375,28 +412,36 @@ peg::parser!{
         // RULES FOR STATEMENTS
         // ********************
 
-        rule let_stmt() -> Statement
-            = "let " n: value_name() ":" t: type_expr() "=" e: value_expr() ";" {
+        // a brace-enclosed block of statements
+        rule block() -> Vec<Statement> =
+            "{" _ s: (stmt() ** _) _ "}" {s}
+        rule stmt() -> Statement =
+            return_stmt() / break_stmt() / continue_stmt() / let_stmt() /
+            def_stmt() / assign_stmt() / expr_stmt()
+        // return statement
+        rule return_stmt() -> Statement =
+            "return" _ o: (e: value_expr() _ {e}) ";" { Statement::Return }
+        // break statement
+        rule break_stmt() -> Statement =
+            "break" _ ";" { Statement::Break }
+        // continue statement
+        rule continue_stmt() -> Statement =
+            "continue" _ ";" { Statement::Continue }
+        // let statement TODO: allow no initialize?
+        rule let_stmt() -> Statement =
+            "let" _ n: opt_typed_value_name() _ "=" _ e: value_expr()
+            _ ";" {
                 Statement::Let
             }
-        rule expr_stmt() -> Statement // TODO should be expression that may mutate rather than just an expression
-            = e: value_expr() ";" {Statement::Expression}
-        rule scope() -> Vec<Statement>
-            = "{" s: (stmt_specifier() *) "}" {s}
-        rule stmt_specifier() -> Statement
-            = let_stmt() / expr_stmt()
-
-        // one parameter in a parameter list
-        rule param() -> (String, TypeExpr)
-            = n: value_name() ":" t: type_expr() {(n, t)}
-        // parameter list for function definition
-        rule params() -> Vec<(String, TypeExpr)>
-            = "(" p: (param() ** ",") ")" {p}
-
-        /*pub rule function() -> Function
-            = "fn " name: var_name() ":" params: params() "->" returns: type_expr() ":=" body: scope() {
-                Function{name, params, returns, body}
-            }*/
+        // local definition statement
+        rule def_stmt() -> Statement =
+            d: def() { Statement::Def }
+        // assignment statement TODO: allow more interesting LHS
+        rule assign_stmt() -> Statement =
+            n: value_name() _ "=" _ e: value_expr() _ ";" { Statement::Assign }
+        // expression statement
+        rule expr_stmt() -> Statement =
+            e: value_expr() _ ";" { Statement::Expr }
     }
 }
 

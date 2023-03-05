@@ -38,8 +38,10 @@ pub struct ValueExpr {
     pub type_expr: Option<TypeExpr>,
 }
 
+// TODO flesh these out
+// TODO define Place as type of expr variant that may be on LHS of assignment
 #[derive(Debug, PartialEq)]
-pub enum ExprVariant { // TODO flesh these out
+pub enum ExprVariant {
     Variable(String),
     Literal(LitVariant),
     BinaryOp(BinOpVariant, Box<ValueExpr>, Box<ValueExpr>),
@@ -48,7 +50,7 @@ pub enum ExprVariant { // TODO flesh these out
     Struct(Vec<(String, ValueExpr)>),
     Choice(Box<ValueExpr>),
     Tagged(String, Box<ValueExpr>),
-    Closure,
+    Closure(Box<Closure>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -90,19 +92,22 @@ pub enum UnOpVariant {
 
 #[derive(Debug, PartialEq)]
 pub struct Closure {
-    pub name:    String,
-    pub params:  Vec<(String, TypeExpr)>,
-    pub returns: TypeExpr,
+    pub params:  Vec<(String, Option<TypeExpr>)>,
+    pub returns: Option<TypeExpr>,
     pub body:    Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Statement { // TODO flesh these out
+pub enum Statement {
+    Expr, // TODO in AST check call must have at least one mutable argument
+    Def,
     Let,
-    Assignment,
-    Expression, // TODO in AST check call must have at least one mutable argument
+    Assign,
     Return,
-    Condition,
+    Break,
+    Continue,
+    Match,
     Loop,
+    With,
 }
 
