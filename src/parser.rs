@@ -2,54 +2,49 @@ use super::ast::*;
 
 peg::parser!{
     pub grammar program_parser() for str {
-        // ****************************
-        // RULES FOR USER-DEFINED NAMES
-        // ****************************
+        // **************
+        // CHARACTER SETS
+        // **************
 
-        // user defined variable names
-        rule value_name() -> String = // TODO later check for leading _ in var name
-            quiet!{
-                n: $(['a'..='z']['a'..='z' | '0'..='9' | '_']*) !name_char() {
-                    n.to_string()
-                }
-            } / expected!("value variable name")
-        // user defined label names for product fields or sum tags
-        rule label_name() -> String =
-            quiet!{
-                n: $(['a'..='z' | '0'..='9']['a'..='z' | '0'..='9' | '_']*) !name_char() {
-                    n.to_string()
-                }
-            } / expected!("label name")
-        // user defined type names
-        rule type_name() -> String =
-            quiet!{
-                n: $(['A'..='Z']['A'..='Z' | 'a'..='z' | '0'..='9']*) !name_char() {
-                    n.to_string()
-                }
-            } / expected!("type variable name")
-        // user defined universal type names
-        rule univ_type_name() -> String =
-            quiet!{
-                n: $(type_name() "!") !(name_char() / ['!' | '?']){
-                    n.to_string()
-                }
-            } / expected!("universal type variable name")
-        // user defined existential type names
-        rule exis_type_name() -> String =
-            quiet!{
-                n: $(type_name() "?") !(name_char() / ['!' | '?']){
-                    n.to_string()
-                }
-            } / expected!("existential type variable name")
+        // 1 or 0 space (all other whitespace already removed)
+        rule _            = quiet!{[' ']?}
+        rule num()        = ['0'..='9']
+        rule upper()      = ['A'..='Z']
+        rule lower()      = ['a'..='z']
+        rule alpha()      = ['A'..='Z' | 'a'..='z']
+        rule alphanum()   = ['A'..='Z' | 'a'..='z' | '0'..='9']
+        // valid characters in value variable names and labels
+        rule value_char() = ['a'..='z' | '0'..='9' | '_']
+        // valid characters in type variable names
+        rule type_char()  = ['A'..='Z' | 'a'..='z' | '0'..='9' | '!' | '?']
+        // valid characters in all variable names
+        rule name_char()  = ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']
+
+        // ********
+        // KEYWORDS
+        // ********
+
+        rule kw_break()    = "break"
+        rule kw_continue() = "continue"
+        rule kw_else()     = "else"
+        rule kw_false()    = "false"
+        rule kw_from()     = "from"
+        rule kw_i()        = "i"
+        rule kw_if()       = "if"
+        rule kw_let()      = "let"
+        rule kw_loop()     = "loop"
+        rule kw_match()    = "match"
+        rule kw_return()   = "return"
+        rule kw_to()       = "to"
+        rule kw_true()     = "true"
+        rule kw() = (kw_break() / kw_continue() / kw_else() / kw_false() /
+            kw_from() / kw_i() / kw_if() / kw_let() / kw_loop() / kw_match() /
+            kw_return() / kw_to() / kw_true()) !name_char()
 
         // ******************
         // OTHER HELPER RULES
         // ******************
 
-        // 1 or 0 space (all other whitespace already removed)
-        rule _ = quiet!{[' ']?}
-        // valid characters in variable names
-        rule name_char() = ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']
         // rule for type annotation/casting
         rule type_annot() -> TypeExpr =
             _ ":" _ t: type_expr() {t}
@@ -62,10 +57,74 @@ peg::parser!{
         // optionally typed value name helper
         rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
             n: value_name() o: type_annot()? {(n, o)}
+        // get brace-enclosed universal type variable names
+        rule type_params() -> (Vec<String>) =
+            _ "{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l}
 
-        // *******************************
-        // RULES FOR TOP-LEVEL DEFINITIONS
-        // *******************************
+        // ********
+        // LITERALS
+        // ********
+
+        // booleans
+        rule literal_true() -> bool = kw_true() { true }
+        rule literal_false() -> bool = kw_false() { false }
+        // signed integer
+        rule literal_integer() -> i32 =
+            s: $("-"? num()+) !(name_char() / ".") {?
+                s.parse::<i32>().map_err(|_| "failed to parse int")
+            }
+        // floating point number
+        rule literal_float() -> f32 =
+            s: $("-"? num()+ "." num()+) !(name_char() / ".") {?
+                s.parse::<f32>().map_err(|_| "failed to parse float")
+            }
+        // string TODO fix escape sequences
+        rule literal_string() -> String =
+            "\"" s: $(([^'\"'] / "\\\"")*) "\"" { s.to_string() }
+
+        // ************************
+        // PROGRAMMER-DEFINED NAMES
+        // ************************
+
+        // user defined variable names
+        rule value_name() -> String = // TODO later check for leading _ in var name
+            quiet!{
+                !kw() n: $(lower() value_char()*) !value_char() {
+                    n.to_string()
+                }
+            } / expected!("value variable name")
+        // user defined label names for product fields or sum tags
+        rule label_name() -> String =
+            quiet!{
+                !kw() n: $(value_char()+) !value_char() {
+                    n.to_string()
+                }
+            } / expected!("label name")
+        // user defined type names
+        rule type_name() -> String =
+            quiet!{
+                !kw() n: $(upper() alphanum()*) !type_char() {
+                    n.to_string()
+                }
+            } / expected!("type variable name")
+        // user defined universal type names
+        rule univ_type_name() -> String =
+            quiet!{
+                !kw() n: $(upper() alphanum()* "!") !type_char() {
+                    n.to_string()
+                }
+            } / expected!("universal type variable name")
+        // user defined existential type names
+        rule exis_type_name() -> String =
+            quiet!{
+                !kw() n: $(upper() alphanum()* "?") !type_char() {
+                    n.to_string()
+                }
+            } / expected!("existential type variable name")
+
+        // *********************
+        // TOP-LEVEL DEFINITIONS
+        // *********************
 
         // collect all top-level definitions
         pub rule defs() -> Vec<Definition> =
@@ -73,11 +132,7 @@ peg::parser!{
         rule def() -> Definition = type_def() / const_def()
         // definition of a type
         rule type_def() -> Definition =
-            n: type_name()
-            o: ("{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l})?
-            _ ":=" _
-            t: type_expr()
-            _ ";" {
+            n: type_name() o: type_params()? _ ":=" _ t: type_expr() _ ";" {
                 Definition::Type(TypeDef {
                     name:   n,
                     params: match o {
@@ -89,20 +144,23 @@ peg::parser!{
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            n: value_name() _ o: type_annot()? _ ":=" _ v: value_expr() _ ";" {
+            n: value_name() o1: type_params()? o2: type_annot()? _ ":=" _ v: value_expr() _ ";" {
                 Definition::Const(ConstDef{
-                    name: n,
-                    type_expr: o,
-                    type_params: Vec::new(), // TODO fix once decide syntax
-                    expr: v,
+                    name:        n,
+                    type_expr:   o2,
+                    type_params: match o1 {
+                        Some(l) => l,
+                        None    => Vec::new(),
+                    },
+                    expr:        v,
                 })
             }
 
-        // **************************
-        // RULES FOR TYPE EXPRESSIONS
-        // **************************
+        // ****************
+        // TYPE EXPRESSIONS
+        // ****************
 
-        // type expressions
+        // type expressions // TODO add plus and mul for combining sums and products?
         pub rule type_expr() -> TypeExpr = precedence!{
             // function type is only binary op
             t1: (@) _ "->" _ t2: @ {TypeExpr::Function(Box::new(t1), Box::new(t2))}
@@ -136,8 +194,11 @@ peg::parser!{
             n: exis_type_name() {TypeExpr::Existential(n.to_string())}
         // tuple type (product with implcit field names)
         rule tuple_type() -> TypeExpr =
-            "(" _ t: (type_expr() ** (_ "," _)) _ ("," _)? ")" {
-                TypeExpr::Tuple(t)
+            "(" _ o: (l: (type_expr() ++ (_ "," _)) _ ("," _)? {l})? ")" {
+                TypeExpr::Tuple(match o {
+                    Some(l) => l,
+                    None    => Vec::new(),
+                })
             }
         // struct type (product with explicit field names)
         rule struct_type() -> TypeExpr =
@@ -146,8 +207,11 @@ peg::parser!{
             }
         // choice type (sum with implcit tag names)
         rule choice_type() -> TypeExpr =
-            "[" _ t: (type_expr() ** (_ "," _)) _ ("," _)? "]" {
-                TypeExpr::Choice(t)
+            "[" _ o: (l: (type_expr() ++ (_ "," _)) _ ("," _)? {l})? "]" {
+                TypeExpr::Choice(match o {
+                    Some(l) => l,
+                    None    => Vec::new(),
+                })
             }
         // tagged type (product with explicit tag names)
         rule tagged_type() -> TypeExpr =
@@ -155,9 +219,9 @@ peg::parser!{
                 TypeExpr::Tagged(l)
             }
 
-        // *********************
-        // RULES FOR EXPRESSIONS
-        // *********************
+        // *****************
+        // VALUE EXPRESSIONS
+        // *****************
 
         pub rule value_expr() -> ValueExpr = precedence!{
             // suffix type annotation / cast, reference, dereference
@@ -285,6 +349,22 @@ peg::parser!{
                 ),
                 type_expr: None,
             }}
+            e1: (@) _ ">=" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Gte,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            e1: (@) _ "<=" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Lte,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
             --
             // equality
             e1: (@) _ "==" _ e2: @ { ValueExpr {
@@ -334,37 +414,63 @@ peg::parser!{
                 type_expr: None,
             }}
             --
-            // literal atoms (true/false should be literals, not variables)
-            e: literal_bool_expr() {e}
-            e: literal_ascii_expr() {e} // TODO more literals, also imaginary
+            // true/false should be literals, not variables
+            e: lit_expr() {e}
+            // should try closures over tuples
+            e: closure_expr() {e}
             --
             // other atoms
             e: variable_expr() {e}
             e: tuple_expr() {e}
+            e: struct_expr() {e}
+            e: choice_expr() {e}
+            e: tagged_expr() {e}
         }
-        // value variable
-        rule variable_expr() -> ValueExpr =
-            n: value_name() {
-                ValueExpr {
-                    variant:   ExprVariant::Variable(n),
-                    type_expr: None,
-                }
-            }
+        // any literal
+        rule lit_expr() -> ValueExpr =
+            quiet!{
+                lit_bool_expr() / lit_int_expr() / lit_float_expr() / lit_ascii_expr()
+            } / expected!("literal expression")
         // boolean literal
-        rule literal_bool_expr() -> ValueExpr =
-            ("true" { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Bool(true)),
+        rule lit_bool_expr() -> ValueExpr =
+            b: (literal_true() / literal_false()) { ValueExpr {
+                variant:   ExprVariant::Literal(LitVariant::Bool(b)),
                 type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
-            }}) /
-            ("false" { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Bool(false)),
-                type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
-            }})
+            }}
+        // signed integer literal
+        rule lit_int_expr() -> ValueExpr =
+            n: literal_integer() { ValueExpr {
+                variant:   ExprVariant::Literal(LitVariant::Integer(n)),
+                type_expr: Some(TypeExpr::Variable("S32".to_string(), Vec::new())),
+            }}
+        // floating point literal
+        rule lit_float_expr() -> ValueExpr =
+            x: literal_float() { ValueExpr {
+                variant:   ExprVariant::Literal(LitVariant::Float(x)),
+                type_expr: Some(TypeExpr::Variable("F32".to_string(), Vec::new())),
+            }}
         // ascii string literal
-        rule literal_ascii_expr() -> ValueExpr =
-            "\"" s: $(([^'\"'] / "\\\"")*) "\"" { ValueExpr {
+        rule lit_ascii_expr() -> ValueExpr =
+            s: literal_string() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
                 type_expr: Some(TypeExpr::Variable("Ascii".to_string(), Vec::new())),
+            }}
+        // value variable
+        rule variable_expr() -> ValueExpr =
+            n: value_name() { ValueExpr {
+                variant:   ExprVariant::Variable(n),
+                type_expr: None,
+            }}
+        // closure expression (functions are closures with no closed-over vars)
+        rule closure_expr() -> ValueExpr =
+            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->" _
+            o: (t: type_expr() _ ":" _ {t})? b: block() { ValueExpr {
+                variant:   ExprVariant::Closure(Box::new(Closure {
+                    params:  l,
+                    returns: o,
+                    body:    b,
+                })),
+                type_expr: None,
             }}
         // tuple expression
         rule tuple_expr() -> ValueExpr =
@@ -390,17 +496,6 @@ peg::parser!{
                 variant:   ExprVariant::Tagged(e.0, Box::new(e.1)),
                 type_expr: None,
             }}
-        // closure expression (functions are closures with no closed-over vars)
-        rule closure_expr() -> ValueExpr =
-            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->" _
-            o: (t: type_expr() _ ":" _ {t})? b: block() { ValueExpr {
-                variant:   ExprVariant::Closure(Box::new(Closure {
-                    params:  l,
-                    returns: o,
-                    body:    b,
-                })),
-                type_expr: None,
-            }}
         /* TODO UFCS
         rule ufcs_call_exp() -> Expression
             = e1: exp_specifier "." n: var_name() e2: tuple_exp() {
@@ -408,28 +503,44 @@ peg::parser!{
             }
         */
 
-        // ********************
-        // RULES FOR STATEMENTS
-        // ********************
+        // **********
+        // STATEMENTS
+        // **********
 
         // a brace-enclosed block of statements
         rule block() -> Vec<Statement> =
             "{" _ s: (stmt() ** _) _ "}" {s}
         rule stmt() -> Statement =
-            return_stmt() / break_stmt() / continue_stmt() / let_stmt() /
-            def_stmt() / assign_stmt() / expr_stmt()
+            return_stmt() / break_stmt() / continue_stmt() / match_stmt() /
+            if_stmt() / loop_stmt() / let_stmt() / def_stmt() / assign_stmt() /
+            expr_stmt()
         // return statement
         rule return_stmt() -> Statement =
-            "return" _ o: (e: value_expr() _ {e}) ";" { Statement::Return }
+            kw_return() _ o: (e: value_expr() _ {e}) ";" { Statement::Return }
         // break statement
         rule break_stmt() -> Statement =
-            "break" _ ";" { Statement::Break }
+            kw_break() _ ";" { Statement::Break }
         // continue statement
         rule continue_stmt() -> Statement =
-            "continue" _ ";" { Statement::Continue }
+            kw_continue() _ ";" { Statement::Continue }
+        // match statement (is not exhaustive)
+        rule match_stmt() -> Statement =
+            kw_match() _ value_expr() _ (to_branch() ++ _) (_ else_branch())? { Statement::Match }
+        // if statement
+        rule if_stmt() -> Statement =
+            kw_if() _ value_expr() _ block() (_ else_branch())? { Statement::If }
+        // to branch of a match statement TODO expr must const TODO sum destructure
+        rule to_branch() -> () =
+            kw_to() _ (value_expr() / ("[" _ label_name() _ "=" _ value_name() _ "]")) _ block()
+        // else branch of match or if
+        rule else_branch() -> () =
+            kw_else() _ (block() / match_stmt() / if_stmt())
+        rule loop_stmt() -> Statement =
+            kw_loop() _ n: opt_typed_value_name() _ kw_from() _ value_expr() _
+            block() { Statement::Loop }
         // let statement TODO: allow no initialize?
         rule let_stmt() -> Statement =
-            "let" _ n: opt_typed_value_name() _ "=" _ e: value_expr()
+            kw_let() _ n: opt_typed_value_name() _ "=" _ e: value_expr()
             _ ";" {
                 Statement::Let
             }

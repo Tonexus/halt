@@ -16,16 +16,19 @@ fn main() -> std::io::Result<()> {
     // remove comments
     let comment_remover = Regex::new("//.*\n").unwrap();
     let contents = comment_remover.replace_all(&contents, "");
-    dbg!(&contents);
 
     // remove excess whitespace
     let whitespace_remover = Regex::new("\\p{White_Space}+").unwrap();
     let contents = whitespace_remover.replace_all(&contents, " ");
-    dbg!(&contents);
 
     let out = parser::program_parser::defs(&contents);
-    assert!(out.is_ok());
-    dbg!("Parse success");
+    if out.is_ok() {
+        println!("Parse success");
+    } else {
+        println!("Parse failed");
+        println!("{}", &contents);
+        dbg!(&out);
+    }
     Ok(())
 }
 

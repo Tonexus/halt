@@ -3,8 +3,8 @@
 // enums/untagged unions/sum types
 
 Bool := [
-    true: (),
-    false: (),
+    true_like: (),
+    false_like: (),
 ];
 
 // some of rust's useful basic generics

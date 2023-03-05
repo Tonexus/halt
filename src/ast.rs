@@ -73,6 +73,8 @@ pub enum BinOpVariant {
     Sub,
     Gt,
     Lt,
+    Gte,
+    Lte,
     Equ,
     Neq,
     And,
@@ -107,6 +109,7 @@ pub enum Statement {
     Break,
     Continue,
     Match,
+    If,
     Loop,
     With,
 }
