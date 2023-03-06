@@ -1,8 +1,7 @@
-# Halt
+# Halt (**H**alt is an **A**bstract **L**anguage that **T**erminates)
 
-**Halt** (**H**alt is an **A**bstract **L**anguage that **T**erminates) is a
-statically typed imperative language that is heavily inspired by Rust. (Intended)
-Features include:
+Halt is a statically typed imperative language that is heavily inspired by Rust.
+(Intended) features include:
 
 - Strong static typing
     - [Algebraic data types](docs/algebraic_data_types.md)
