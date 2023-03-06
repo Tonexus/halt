@@ -1,4 +1,4 @@
-# Halt (**H**alt is an **A**bstract **L**anguage that **T**erminates)
+# HALT (HALT is an Abstract Language that Terminates)
 
 Halt is a statically typed imperative language that is heavily inspired by Rust.
 (Intended) features include:
