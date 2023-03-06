@@ -102,12 +102,12 @@ In Halt, general sum types have the following forms:
 
 ```
 // explicitly labeled
-Foo := [label_1: Type1, label_2: Type2, ...]
+Foo := [label_1: Type1, label_2: Type2, label_3: Type3]
 
 // implicitly labeled
-Bar := [Type1, Type2, ...]
+Bar := [Type1, Type2, Type3]
 
-// Bar is equivalent to [_1: Type1, _2: Type2, ...]
+// Bar is equivalent to [_1: Type1, _2: Type2, _3: Type3]
 
 // instantiation for value: Type2
 let foo: Foo = [label_2 = value];
