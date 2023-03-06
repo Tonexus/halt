@@ -82,8 +82,11 @@ pub enum BinOpVariant {
     Call,
 }
 
+// TODO add . field access
+// TODO add .. UFCS
+// TODO add ~ copy
 #[derive(Debug, PartialEq)]
-pub enum UnOpVariant { // TODO add . field access and .. UFCS
+pub enum UnOpVariant {
     Cast,
     Ref,
     Deref,
@@ -103,64 +106,41 @@ pub struct Closure {
 pub enum Statement {
     Expr(ValueExpr),
     Def(Definition),
-    Let(DeclPattern, Option<ValueExpr>),
-    Assign(AsgnPattern, ValueExpr), // TODO replace string with place
+    Let(ValueExpr, Option<ValueExpr>),
+    Assign(ValueExpr, ValueExpr),
     Return(ValueExpr),
     Break,
     Continue,
-    Match(ValueExpr, Vec<ToBranch>, Vec<Statement>),
-    If(ValueExpr, Vec<Statement>, Vec<Statement>),
-    Loop(DeclPattern, ValueExpr, Vec<Statement>),
+    Match(Match),
+    If(If),
+    Loop(Loop),
     With(Vec<Statement>),
 }
 
-// TODO consider ref/derefs in patterns?
 #[derive(Debug, PartialEq)]
-pub struct AsgnPattern {
-    pub variant:   AsgnPatVariant,
-    pub type_expr: Option<TypeExpr>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AsgnPatVariant {
-    Variable(String),
-    Deref(ValueExpr),
-    Tuple(Vec<AsgnPattern>),
-    Struct(Vec<(String, AsgnPattern)>),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct DeclPattern {
-    pub variant:   DeclPatVariant,
-    pub type_expr: Option<TypeExpr>,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum DeclPatVariant {
-    Variable(String),
-    Tuple(Vec<DeclPattern>),
-    Struct(Vec<(String, DeclPattern)>),
+pub struct Match {
+    pub value:       ValueExpr,
+    pub to_branches: Vec<ToBranch>,
+    pub else_branch: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ToBranch {
-    pattern: Vec<ToPattern>,
-    block:   Vec<Statement>,
+    pub pattern: Vec<ValueExpr>,
+    pub block:   Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ToPattern {
-    pub variant:   ToPatVariant,
-    pub type_expr: Option<TypeExpr>,
+pub struct If {
+    pub value:       ValueExpr,
+    pub then_branch: Vec<Statement>,
+    pub else_branch: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum ToPatVariant {
-    Const(ValueExpr), // must be literal or "inline" expression
-    Variable(String),
-    Tuple(Vec<ToPattern>),
-    Struct(Vec<(String, ToPattern)>),
-    Choice(Box<ToPattern>),
-    Tagged(String, Box<ToPattern>),
+pub struct Loop {
+    pub value: ValueExpr,
+    pub iter:  ValueExpr,
+    pub body:  Vec<Statement>,
 }
 

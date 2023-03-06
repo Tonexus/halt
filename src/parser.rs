@@ -415,12 +415,9 @@ peg::parser!{
                 type_expr: None,
             }}
             --
-            // true/false should be literals, not variables
+            // atoms / non-direct recursion
             e: lit_expr() {e}
-            // should try closures over tuples
             e: closure_expr() {e}
-            --
-            // other atoms
             e: variable_expr() {e}
             e: tuple_expr() {e}
             e: struct_expr() {e}
@@ -534,47 +531,62 @@ peg::parser!{
             kw_continue() _ ";" { Statement::Continue }
         // match statement (is not exhaustive)
         rule match_stmt() -> Statement =
-            kw_match() _ value_expr() _ (to_branch() ++ _) (_ else_branch())? {
-                //Statement::Match
-                Statement::Break
+            kw_match() _
+            e: value_expr() _
+            l1: (to_branch() ++ _)
+            o: (_ l2: else_branch() {l2})? {
+                Statement::Match(Match {
+                    value:       e,
+                    to_branches: l1,
+                    else_branch: match o {
+                        Some(l2) => l2,
+                        None     => Vec::new(),
+                    },
+                })
             }
         // if statement
         rule if_stmt() -> Statement =
-            kw_if() _ e: value_expr() _ l1: block() o: (_ l2: else_branch() {l2})? {
-                Statement::If(e, l1, match o {
-                    Some(l2) => l2,
-                    None     => Vec::new(),
+            kw_if() _
+            e: value_expr() _
+            l1: block()
+            o: (_ l2: else_branch() {l2})? {
+                Statement::If(If {
+                    value:       e,
+                    then_branch: l1,
+                    else_branch: match o {
+                        Some(l2) => l2,
+                        None     => Vec::new(),
+                    }
                 })
             }
         // to branch of a match statement TODO expr must const TODO sum destructure
-        rule to_branch() -> () =
-            kw_to() _ (value_expr() / ("[" _ label_name() _ "=" _ value_name() _ "]")) _ block()
+        rule to_branch() -> ToBranch =
+            l1: (kw_to() _ e: value_expr() _ {e})+ l2: block() {
+                ToBranch{pattern: l1, block: l2}
+            }
         // else branch of match or if
         rule else_branch() -> Vec<Statement> =
             kw_else() _ l: (block() / (s: (match_stmt() / if_stmt()) {
                 Vec::from([s])
             })) {l}
+        // loop statement
         rule loop_stmt() -> Statement =
-            kw_loop() _ n: opt_typed_value_name() _ kw_from() _ value_expr() _
-            block() {
-                //Statement::Loop
-                Statement::Break
+            kw_loop() _ e1: value_expr() _ kw_from() _ e2: value_expr() _
+            l: block() {
+                Statement::Loop(Loop{value: e1, iter: e2, body: l})
             }
-        // let statement TODO: allow no initialize?
+        // let statement TODO LHS destructure
         rule let_stmt() -> Statement =
-            kw_let() _ n: opt_typed_value_name() _ "=" _ e: value_expr()
-            _ ";" {
-                //Statement::Let
-                Statement::Break
+            kw_let() _ e1: value_expr() _ o: ("=" _ e2: value_expr() _ ";" {e2})? {
+                Statement::Let(e1, o)
             }
         // local definition statement
         rule def_stmt() -> Statement =
             d: def() { Statement::Def(d) }
-        // assignment statement TODO: allow more interesting LHS
+        // assignment statement TODO LHS destructure
         rule assign_stmt() -> Statement =
-            n: value_name() _ "=" _ e: value_expr() _ ";" {
-                //Statement::Assign
-                Statement::Break
+            e1: value_expr() _ "=" _ e2: value_expr() _ ";" {
+                Statement::Assign(e1, e2)
             }
         // expression statement
         rule expr_stmt() -> Statement =
