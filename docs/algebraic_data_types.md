@@ -1,12 +1,12 @@
 ## Algeraic Data types
 
-Halt's data types are all compositions of other types via products and sums. A
-product of types `A` and `B` may be expressed as `(A, B)`, and values of type
-`(A, B)` are constructed from a value of type `A` *and* a value of type `B`. 
-Similarly, a sum of types `A` and `B` may be expressed as `[A, B]`, and values
-of type `[A, B]` are constructed from a value of type `A` *or* a value of type
-`B`. In addition to implicitly labeled compositions, Halt also allows for
-explicitly labeled products and sums.
+Halt's data types are all compositions via products and sums. A product of types
+`A` and `B` may be expressed as `(A, B)`, and values of type `(A, B)` are
+constructed from a value of type `A` *and* a value of type `B`.  Similarly, a
+sum of types `A` and `B` may be expressed as `[A, B]`, and values of type
+`[A, B]` are constructed from a value of type `A` *or* a value of type `B`.
+In addition to implicitly labeled compositions, Halt also allows for explicitly
+labeled products and sums.
 
 #### Primitive and keyword data types
 
@@ -129,29 +129,29 @@ a singleton struct from `T` having a program-unique label.)
 
 ##### Enums and keyword equivalencies
 
-All keyword types are simply enums with additional functionality provided by
-interfaces (TODO page on this). For instance, `N2`, defined as `[(), ()]` is
+All keyword types are simply unique enums with additional functionality provided
+by interfaces (TODO page on this). For instance, `N2`, defined as `[(), ()]` is
 equivalent to `Bool`, and `N256` is equivalent to `U8` and `S8`.
 
 ##### Singleton canonicalization
 
-Any singleton implicitly labeled compositional type is equivalent to its
-constituent type. In other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and
-`[_1: A]` are all equivalent, and may be treated as the type `A`. An implication
-of canonicalization is that every function is an arity-1 function with its sole
+Any implicitly labeled singleton type is equivalent to its constituent type. In
+other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and `[_1: A]` are all
+equivalent, and may be treated as the type `A`. An interesting implication of
+canonicalization is that every function is an arity-1 function with its sole
 parameter being a tuple. Furthermore, parentheses and square brackets can be
-naturally used for both grouping expressions and constructing products and sums,
-as the expression `[10 + (5 + 5)]` is equivalent to `[10 + 10]`, which is
+naturally used for both grouping expressions and for constructing products and
+sums, as the expression `[10 + (5 + 5)]` is equivalent to `[10 + 10]`, which is
 equivalent to `20`.
 
 ##### Automatic conversion of sums
 
-Canoncialization may seem to contradict the implicit instantiate of sums. In the
-example with sums, `[value]` must have type `[Type2]`, which is equivalent to
-`Type2`, but it is assigned to a variable of type `[Type1, Type2, ...]`. In
-Halt, an explicitly labeled sum value may be automatically converted to a sum
-with additional summands as long as the source labels and types match the
-destination labels and types. Implicitly labeled sum values without redundant
-types may be converted to an implicitly labeled sum of the same types but with
-a different label order.
+Canonicalization may seem to contradict the instatiation of implicitly labelled
+sums. In the example with sums, `[value]` must have type `[Type2]`, which is
+equivalent to `Type2`, but it is assigned to a variable of type
+`[Type1, Type2, ...]`. In Halt, a choice may be automatically converted to a
+choice with additional summands as long as the source labels and types match a
+subset of the destination labels and types. Implicitly labeled sum values
+without redundant types may be converted to an implicitly labeled sum of the
+same types but with a different implicit label order.
 
