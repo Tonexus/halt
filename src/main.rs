@@ -22,12 +22,12 @@ fn main() -> std::io::Result<()> {
     let contents = whitespace_remover.replace_all(&contents, " ");
 
     let out = parser::program_parser::defs(&contents);
+    dbg!(&out);
     if out.is_ok() {
         println!("Parse success");
     } else {
-        println!("Parse failed");
         println!("{}", &contents);
-        dbg!(&out);
+        println!("Parse failed");
     }
     Ok(())
 }

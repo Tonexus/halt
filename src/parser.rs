@@ -225,108 +225,18 @@ peg::parser!{
         // *****************
 
         pub rule value_expr() -> ValueExpr = precedence!{
-            // suffix type annotation / cast, reference, dereference
-            e: @ t: type_annot() { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Cast,
-                    Box::new(e),
-                ),
-                type_expr: Some(t),
-            }}
-            e: @ _ "&" { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Ref,
-                    Box::new(e),
-                ),
-                type_expr: None,
-            }}
-            e: @ _ "$" { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Deref,
-                    Box::new(e),
-                ),
-                type_expr: None,
-            }}
-            --
-            // prefix positive, negative, and not
-            "+" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Pos,
-                    Box::new(e),
-                ),
-                type_expr: None,
-            }}
-            "-" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Neg,
-                    Box::new(e),
-                ),
-                type_expr: None,
-            }}
-            "!" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Not,
-                    Box::new(e),
-                ),
-                type_expr: None,
-            }}
-            --
-            // exponent and logarithm TODO: check associativity
-            e1: (@) _ "^" _ e2: @ { ValueExpr {
+            // equality
+            e1: (@) _ "==" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Pow,
+                    BinOpVariant::Equ,
                     Box::new(e1),
                     Box::new(e2),
                 ),
                 type_expr: None,
             }}
-            e1: (@) _ "@" _ e2: @ { ValueExpr {
+            e1: (@) _ "!=" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Log,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            --
-            // multiplication, division, and modulo
-            e1: (@) _ "*" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Mul,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            e1: (@) _ "/" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Div,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            e1: (@) _ "%" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Mod,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            --
-            // addition and subtraction
-            e1: (@) _ "+" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Add,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            e1: (@) _ "-" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Sub,
+                    BinOpVariant::Neq,
                     Box::new(e1),
                     Box::new(e2),
                 ),
@@ -367,18 +277,10 @@ peg::parser!{
                 type_expr: None,
             }}
             --
-            // equality
-            e1: (@) _ "==" _ e2: @ { ValueExpr {
+            // or
+            e1: (@) _ "\\/" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Equ,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
-                type_expr: None,
-            }}
-            e1: (@) _ "!=" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Neq,
+                    BinOpVariant::Or,
                     Box::new(e1),
                     Box::new(e2),
                 ),
@@ -395,18 +297,116 @@ peg::parser!{
                 type_expr: None,
             }}
             --
-            // or
-            e1: (@) _ "\\/" _ e2: @ { ValueExpr {
+            // addition and subtraction
+            e1: (@) _ "+" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Or,
+                    BinOpVariant::Add,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            e1: (@) _ "-" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Sub,
                     Box::new(e1),
                     Box::new(e2),
                 ),
                 type_expr: None,
             }}
             --
+            // multiplication, division, and modulo
+            e1: (@) _ "*" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Mul,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            e1: (@) _ "/" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Div,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            e1: (@) _ "%" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Mod,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            --
+            // exponent and logarithm TODO: check associativity
+            e1: (@) _ "^" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Pow,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            e1: (@) _ "@" _ e2: @ { ValueExpr {
+                variant: ExprVariant::BinaryOp(
+                    BinOpVariant::Log,
+                    Box::new(e1),
+                    Box::new(e2),
+                ),
+                type_expr: None,
+            }}
+            --
+            // prefix positive, negative, and not
+            "+" _ e: @ { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Pos,
+                    Box::new(e),
+                ),
+                type_expr: None,
+            }}
+            "-" _ e: @ { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Neg,
+                    Box::new(e),
+                ),
+                type_expr: None,
+            }}
+            "!" _ e: @ { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Not,
+                    Box::new(e),
+                ),
+                type_expr: None,
+            }}
+            --
+            // suffix type annotation / cast, reference, dereference
+            e: @ t: type_annot() { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Cast,
+                    Box::new(e),
+                ),
+                type_expr: Some(t),
+            }}
+            e: @ _ "&" { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Ref,
+                    Box::new(e),
+                ),
+                type_expr: None,
+            }}
+            e: @ _ "$" { ValueExpr {
+                variant: ExprVariant::UnaryOp(
+                    UnOpVariant::Deref,
+                    Box::new(e),
+                ),
+                type_expr: None,
+            }}
+            --
             // function application (right associative)
-            e1: @ _ e2: (@) { ValueExpr {
+            e1: @ _ !['+' | '-'] e2: (@) { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Call,
                     Box::new(e1),
@@ -585,9 +585,10 @@ peg::parser!{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use program_parser::*;
     #[test]
     fn basic_type_def() {
-        assert_eq!(program_parser::defs("Foo := Int;"), Ok(
+        assert_eq!(defs("Foo := Int;"), Ok(
             Vec::from([Definition::Type(TypeDef{
                 name:   "Foo".to_string(),
                 params: Vec::new(),
@@ -598,7 +599,7 @@ mod tests {
 
     #[test]
     fn medium_type_def() {
-        assert_eq!(program_parser::defs("Foo{A!} := (A!, [int: Int, float: Float]);"), Ok(
+        assert_eq!(defs("Foo{A!} := (A!, [int: Int, float: Float]);"), Ok(
             Vec::from([Definition::Type(TypeDef{
                 name:   "Foo".to_string(),
                 params: Vec::from(["A!".to_string()]),
@@ -615,7 +616,7 @@ mod tests {
 
     #[test]
     fn basic_const_def() {
-        assert_eq!(program_parser::defs("foo := bar + false;"), Ok(
+        assert_eq!(defs("foo := bar + false;"), Ok(
             Vec::from([Definition::Const(ConstDef{
                 name:        "foo".to_string(),
                 type_expr:   None,
@@ -640,7 +641,51 @@ mod tests {
 
     #[test]
     fn basic_def_fail() {
-        assert!(program_parser::defs("fL%u").is_err())
+        assert!(defs("fL%u").is_err())
+    }
+
+    #[test]
+    fn basic_expr_order_of_ops_1() {
+        // parenthesize as (foo())$
+        assert_eq!(value_expr("foo()$"), Ok(
+            ValueExpr {
+                variant:   ExprVariant::UnaryOp(
+                    UnOpVariant::Deref,
+                    Box::new(value_expr("foo()").unwrap()),
+                ),
+                type_expr: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn basic_expr_order_of_ops_2() {
+        // parenthesize as (a * b) - c
+        assert_eq!(value_expr("a * b - c"), Ok(
+            ValueExpr {
+                variant:   ExprVariant::BinaryOp(
+                    BinOpVariant::Sub,
+                    Box::new(value_expr("a * b").unwrap()),
+                    Box::new(value_expr("c").unwrap()),
+                ),
+                type_expr: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn basic_expr_order_of_ops_3() {
+        // parenthesize as (foo(a)) * (bar(b))
+        assert_eq!(value_expr("foo(a) * bar(b)"), Ok(
+            ValueExpr {
+                variant:   ExprVariant::BinaryOp(
+                    BinOpVariant::Mul,
+                    Box::new(value_expr("foo(a)").unwrap()),
+                    Box::new(value_expr("bar(b)").unwrap()),
+                ),
+                type_expr: None,
+            }
+        ));
     }
     /*assert_eq!(
         parser::function("fn foo:(a:Int)->():={}"),
