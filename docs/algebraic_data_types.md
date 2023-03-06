@@ -137,12 +137,12 @@ equivalent to `Bool`, and `N256` is equivalent to `U8` and `S8`.
 
 Any implicitly labeled singleton type is equivalent to its constituent type. In
 other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and `[_1: A]` are all
-equivalent, and may be treated as the type `A`. An interesting implication of
-canonicalization is that every function is an arity-1 function with its sole
-parameter being a tuple. Furthermore, parentheses and square brackets can be
-naturally used for both grouping expressions and for constructing products and
-sums, as the expression `[10 + (5 + 5)]` is equivalent to `[10 + 10]`, which is
-equivalent to `20`.
+equivalent, and whose fields may be accessed as type `A`. An interesting
+implication of canonicalization is that every function is an arity-1 function
+with its sole parameter being a tuple. Furthermore, parentheses and square
+brackets can both be naturally used for both grouping expressions and for
+constructing product and sum values, as the expression `[10 + (5 + 5)]` is of
+type `[(U32)]`, which is equivalent to `U32`.
 
 #### Automatic conversion of sums
 
