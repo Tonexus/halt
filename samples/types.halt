@@ -8,18 +8,18 @@ Bool := [
 ];
 
 // some of rust's useful basic generics
-Result{A!, B!} := [
-    okay: A!,
-    fail: B!,
+Result := A! B! [
+    okay: A,
+    fail: B,
 ];
 
-Option{A!} := [
-    some: A!,
+Option := A! [
+    some: A,
     none: (),
 ];
 
 // structs/product types
-// note that tuples are structs: (A, B, C) is equivalent to {& 0:A, 1:B, 2:C}
+// note that tuples are structs: (A, B, C) is equivalent to (_0: A, _1: B, _2: C)
 Point3D := (
     x: Float,
     y: Float,

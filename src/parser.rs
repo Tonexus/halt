@@ -1,3 +1,5 @@
+// parser for halt. uses peg
+
 use super::ast::*;
 
 peg::parser!{
@@ -16,7 +18,7 @@ peg::parser!{
         // valid characters in value variable names and labels
         rule value_char() = ['a'..='z' | '0'..='9' | '_']
         // valid characters in type variable names
-        rule type_char()  = ['A'..='Z' | 'a'..='z' | '0'..='9' | '!' | '?']
+        rule type_char()  = ['A'..='Z' | 'a'..='z' | '0'..='9']
         // valid characters in all variable names
         rule name_char()  = ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']
 
@@ -79,9 +81,9 @@ peg::parser!{
         // optionally typed value name
         rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
             n: value_name() o: type_annot()? {(n, o)}
-        // brace-enclosed universal type variable names
-        rule type_params() -> (Vec<String>) =
-            _ "{" _ l: (univ_type_name() ++ (_ "," _)) _ ("," _)? "}" {l}
+        // type list
+        rule type_param_list() -> Vec<TypeExpr> =
+            "{" _ l: (type_expr() ++ (_ "," _)) _ ("," _)? "}" {l}
 
         // ************************
         // PROGRAMMER-DEFINED NAMES
@@ -108,20 +110,6 @@ peg::parser!{
                     n.to_string()
                 }
             } / expected!("type variable name")
-        // user defined universal type names
-        rule univ_type_name() -> String =
-            quiet!{
-                !kw() n: $(upper() alphanum()* "!") !type_char() {
-                    n.to_string()
-                }
-            } / expected!("universal type variable name")
-        // user defined existential type names
-        rule exis_type_name() -> String =
-            quiet!{
-                !kw() n: $(upper() alphanum()* "?") !type_char() {
-                    n.to_string()
-                }
-            } / expected!("existential type variable name")
 
         // *********************
         // TOP-LEVEL DEFINITIONS
@@ -133,27 +121,19 @@ peg::parser!{
         rule def() -> Definition = type_def() / const_def()
         // definition of a type
         rule type_def() -> Definition =
-            n: type_name() o: type_params()? _ ":=" _ t: type_expr() _ ";" {
+            n: type_name() _ ":=" _ t: type_expr() _ ";" {
                 Definition::Type(TypeDef {
-                    name:   n,
-                    params: match o {
-                        Some(l) => l,
-                        None    => Vec::new(),
-                    },
-                    expr:   t,
+                    name: n,
+                    expr: t,
                 })
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            n: value_name() o1: type_params()? o2: type_annot()? _ ":=" _ v: value_expr() _ ";" {
+            n: value_name() o: type_annot()? _ ":=" _ v: value_expr() _ ";" {
                 Definition::Const(ConstDef{
-                    name:        n,
-                    type_expr:   o2,
-                    type_params: match o1 {
-                        Some(l) => l,
-                        None    => Vec::new(),
-                    },
-                    expr:        v,
+                    name:      n,
+                    type_expr: o,
+                    expr:      v,
                 })
             }
 
@@ -164,35 +144,30 @@ peg::parser!{
         // type expressions // TODO add plus and mul for combining sums and products?
         pub rule type_expr() -> TypeExpr = precedence!{
             // function type is only binary op
-            t1: (@) _ "->" _ t2: @ {TypeExpr::Function(Box::new(t1), Box::new(t2))}
+            t1: (@) _ "->" _ t2: @ {
+                TypeExpr::Function(Box::new(t1), Box::new(t2))
+            }
+            --
+            // inserting universal type parameters
+            t: @ _ l: type_param_list() {
+                TypeExpr::TypeParams(Box::new(t), l)
+            }
+            --
+            // declare new universal type variable
+            n: type_name() _ "!" _ t: @ {TypeExpr::Universal(n, Box::new(t))}
+            // declare new existential type variable
+            n: type_name() _ "?" _ t: @ {TypeExpr::Existential(n, Box::new(t))}
             --
             // atoms
-            t: univ_type() {t}
-            t: exis_type() {t}
             t: variable_type() {t}
             t: tuple_type() {t}
             t: struct_type() {t}
             t: choice_type() {t}
             t: tagged_type() {t}
         }
-        // type variable (may be generic)
+        // type variable
         rule variable_type() -> TypeExpr =
-            n: type_name()
-            o: ("{" _ l: (type_expr() ++ (_ "," _)) _ ("," _)? "}" {l})? {
-                TypeExpr::Variable(
-                    n,
-                    match o {
-                        Some(l) => l,
-                        None    => Vec::new(),
-                    },
-                )
-            }
-        // universal type variable
-        rule univ_type() -> TypeExpr =
-            n: univ_type_name() {TypeExpr::Universal(n.to_string())}
-        // existential type variable
-        rule exis_type() -> TypeExpr =
-            n: exis_type_name() {TypeExpr::Existential(n.to_string())}
+            n: type_name() {TypeExpr::Variable(n)}
         // tuple type (product with implcit field names)
         rule tuple_type() -> TypeExpr =
             "(" _ o: (l: (type_expr() ++ (_ "," _)) _ ("," _)? {l})? ")" {
@@ -405,10 +380,15 @@ peg::parser!{
                 type_expr: None,
             }}
             --
-            // function application (right associative)
-            e1: @ _ !['+' | '-'] e2: (@) { ValueExpr {
+            // function application (right associative) with optional type params
+            e1: @ _ o: (l: type_param_list()? _ {l}) !['+' | '-'] e2: (@) { ValueExpr {
                 variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Call,
+                    BinOpVariant::Call(
+                        match o {
+                            Some(l) => l,
+                            None    => Vec::new(),
+                        }
+                    ),
                     Box::new(e1),
                     Box::new(e2),
                 ),
@@ -433,25 +413,25 @@ peg::parser!{
         rule lit_bool_expr() -> ValueExpr =
             b: (literal_true() / literal_false()) { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Bool(b)),
-                type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
+                type_expr: Some(TypeExpr::Variable("Bool".to_string())),
             }}
         // signed integer literal
         rule lit_int_expr() -> ValueExpr =
             n: literal_integer() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Integer(n)),
-                type_expr: Some(TypeExpr::Variable("S32".to_string(), Vec::new())),
+                type_expr: Some(TypeExpr::Variable("S32".to_string())),
             }}
         // floating point literal
         rule lit_float_expr() -> ValueExpr =
             x: literal_float() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Float(x)),
-                type_expr: Some(TypeExpr::Variable("F32".to_string(), Vec::new())),
+                type_expr: Some(TypeExpr::Variable("F32".to_string())),
             }}
         // ascii string literal
         rule lit_ascii_expr() -> ValueExpr =
             s: literal_string() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
-                type_expr: Some(TypeExpr::Variable("Ascii".to_string(), Vec::new())),
+                type_expr: Some(TypeExpr::Variable("Ascii".to_string())),
             }}
         // value variable
         rule variable_expr() -> ValueExpr =
@@ -461,13 +441,20 @@ peg::parser!{
             }}
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> ValueExpr =
-            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->" _
-            o: (t: type_expr() _ ":" _ {t})? b: block() { ValueExpr {
-                variant:   ExprVariant::Closure(Box::new(Closure {
-                    params:  l,
-                    returns: o,
-                    body:    b,
-                })),
+            o1: ((n: type_name() _ "!" _ {n})+)?
+            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
+            _ "->" _
+            o2: (t: type_expr() _ ":" _ {t})?
+            b: block() { ValueExpr {
+                variant:   ExprVariant::Closure(Closure {
+                    params:      l,
+                    type_params: match o1 {
+                        Some(l) => l,
+                        None    => Vec::new(),
+                    },
+                    returns:     o2,
+                    body:        b,
+                }),
                 type_expr: None,
             }}
         // tuple expression
@@ -602,26 +589,27 @@ mod tests {
     fn basic_type_def() {
         assert_eq!(defs("Foo := Int;"), Ok(
             Vec::from([Definition::Type(TypeDef{
-                name:   "Foo".to_string(),
-                params: Vec::new(),
-                expr:   TypeExpr::Variable("Int".to_string(), Vec::new()),
+                name: "Foo".to_string(),
+                expr: TypeExpr::Variable("Int".to_string()),
             })])
         ));
     }
 
     #[test]
     fn medium_type_def() {
-        assert_eq!(defs("Foo{A!} := (A!, [int: Int, float: Float]);"), Ok(
+        assert_eq!(defs("Foo := A! (A, [int: Int, float: Float]);"), Ok(
             Vec::from([Definition::Type(TypeDef{
-                name:   "Foo".to_string(),
-                params: Vec::from(["A!".to_string()]),
-                expr:   TypeExpr::Tuple(Vec::from([
-                    TypeExpr::Universal("A!".to_string()),
-                    TypeExpr::Tagged(Vec::from([
-                        ("int".to_string(), TypeExpr::Variable("Int".to_string(), Vec::new())),
-                        ("float".to_string(), TypeExpr::Variable("Float".to_string(), Vec::new())),
-                    ])),
-                ])),
+                name: "Foo".to_string(),
+                expr: TypeExpr::Universal(
+                    "A".to_string(),
+                    Box::new(TypeExpr::Tuple(Vec::from([
+                        TypeExpr::Variable("A".to_string()),
+                        TypeExpr::Tagged(Vec::from([
+                            ("int".to_string(), TypeExpr::Variable("Int".to_string())),
+                            ("float".to_string(), TypeExpr::Variable("Float".to_string())),
+                        ])),
+                    ]))),
+                ),
             })])
         ));
     }
@@ -632,7 +620,6 @@ mod tests {
             Vec::from([Definition::Const(ConstDef{
                 name:        "foo".to_string(),
                 type_expr:   None,
-                type_params: Vec::new(),
                 expr:        ValueExpr {
                     variant:   ExprVariant::BinaryOp(
                         BinOpVariant::Add,
@@ -642,7 +629,7 @@ mod tests {
                         }),
                         Box::new(ValueExpr{
                             variant:   ExprVariant::Literal(LitVariant::Bool(false)),
-                            type_expr: Some(TypeExpr::Variable("Bool".to_string(), Vec::new())),
+                            type_expr: Some(TypeExpr::Variable("Bool".to_string())),
                         }),
                     ),
                     type_expr: None,

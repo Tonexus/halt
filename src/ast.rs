@@ -1,3 +1,4 @@
+// ast for halt
 
 #[derive(Debug, PartialEq)]
 pub enum Definition {
@@ -8,7 +9,6 @@ pub enum Definition {
 #[derive(Debug, PartialEq)]
 pub struct TypeDef {
     pub name:   String,
-    pub params: Vec<String>,
     pub expr:   TypeExpr,
 }
 
@@ -16,15 +16,15 @@ pub struct TypeDef {
 pub struct ConstDef {
     pub name:        String,
     pub type_expr:   Option<TypeExpr>,
-    pub type_params: Vec<String>,
     pub expr:        ValueExpr,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum TypeExpr {
-    Variable(String, Vec<TypeExpr>),
-    Universal(String),
-    Existential(String),
+    Variable(String),
+    TypeParams(Box<TypeExpr>, Vec<TypeExpr>),
+    Universal(String, Box<TypeExpr>),
+    Existential(String, Box<TypeExpr>),
     Tuple(Vec<TypeExpr>),
     Struct(Vec<(String, TypeExpr)>),
     Choice(Vec<TypeExpr>),
@@ -50,7 +50,7 @@ pub enum ExprVariant {
     Struct(Vec<(String, ValueExpr)>),
     Choice(Box<ValueExpr>),
     Tagged(String, Box<ValueExpr>),
-    Closure(Box<Closure>),
+    Closure(Closure),
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,7 +79,7 @@ pub enum BinOpVariant {
     Neq,
     And,
     Or,
-    Call,
+    Call(Vec<TypeExpr>),
 }
 
 // TODO add . field access
@@ -87,6 +87,7 @@ pub enum BinOpVariant {
 // TODO add ~ copy
 #[derive(Debug, PartialEq)]
 pub enum UnOpVariant {
+    Field(String),
     Cast,
     Ref,
     Deref,
@@ -97,9 +98,10 @@ pub enum UnOpVariant {
 
 #[derive(Debug, PartialEq)]
 pub struct Closure {
-    pub params:  Vec<(String, Option<TypeExpr>)>,
-    pub returns: Option<TypeExpr>,
-    pub body:    Vec<Statement>,
+    pub params:      Vec<(String, Option<TypeExpr>)>,
+    pub type_params: Vec<String>,
+    pub returns:     Option<TypeExpr>,
+    pub body:        Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
