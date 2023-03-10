@@ -5,6 +5,7 @@ use regex::Regex;
 
 mod ast;
 mod parser;
+mod type_check;
 
 fn main() -> std::io::Result<()> {
     // open argument as file
@@ -23,12 +24,17 @@ fn main() -> std::io::Result<()> {
 
     let out = parser::program_parser::defs(&contents);
     dbg!(&out);
-    if out.is_ok() {
-        println!("Parse success");
-    } else {
-        println!("{}", &contents);
-        println!("Parse failed");
+    match out {
+        Ok(defs) => {
+            println!("Parse success");
+            type_check::type_check(defs);
+            return Ok(())
+        },
+        Err(_)   => {
+            println!("{}", &contents);
+            println!("Parse failed");
+            return Ok(());
+        }
     }
-    Ok(())
 }
 

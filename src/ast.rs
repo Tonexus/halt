@@ -8,15 +8,15 @@ pub enum Definition {
 
 #[derive(Debug, PartialEq)]
 pub struct TypeDef {
-    pub name:   String,
-    pub expr:   TypeExpr,
+    pub name: String,
+    pub expr: TypeExpr,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ConstDef {
-    pub name:        String,
-    pub type_expr:   Option<TypeExpr>,
-    pub expr:        ValueExpr,
+    pub name:      String,
+    pub type_expr: Option<TypeExpr>,
+    pub expr:      ValueExpr,
 }
 
 #[derive(Debug, PartialEq)]
