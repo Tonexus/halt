@@ -66,7 +66,7 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 pub fn type_check(defs: Vec<Definition>) -> Result<(), &'static str> {
     let mut types: HashMap<String, TypeExpr> = HashMap::new();
     let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
-    let mut type_ctxt: HashMap<String, TypeVarState> = HashMap::new();
+    let mut type_ctxt = HashMap::new();
     //let mut ctxt   = Context{types: HashMap::new(), values: HashMap::new()};
     // split types and consts, building initial context
     for def in defs.into_iter() {

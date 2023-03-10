@@ -72,18 +72,47 @@ peg::parser!{
         // rule for type annotation/casting
         rule type_annot() -> TypeExpr =
             _ ":" _ t: type_expr() {t}
-        // label/type pair
-        rule label_type_pair() -> (String, TypeExpr) =
+        // labeled type
+        rule labeled_type() -> (String, TypeExpr) =
             n: label_name() t: type_annot() {(n, t)}
-        // label/value pair
-        rule label_value_pair() -> (String, ValueExpr) =
+        // labeled value
+        rule labeled_value() -> (String, ValueExpr) =
             n: label_name() _ "=" _ v: value_expr() {(n, v)}
         // optionally typed value name
         rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
             n: value_name() o: type_annot()? {(n, o)}
         // type list
-        rule type_param_list() -> Vec<TypeExpr> =
-            "{" _ l: (type_expr() ++ (_ "," _)) _ ("," _)? "}" {l}
+        rule type_list() -> Vec<TypeExpr> =
+            l: (type_expr() ++ (_ "," _)) (_ ",")? {l}
+        // labeled type list
+        rule labeled_type_list() -> Vec<(String, TypeExpr)> =
+            l: (labeled_type() ++ (_ "," _)) (_ ",")? {l}
+        // type list with implicit labels
+        rule type_list_labeled() -> Vec<(String, TypeExpr)> =
+            l: type_list() {
+                l.into_iter().enumerate().map(
+                    |(n, t)| ("_".to_owned() + &n.to_string(), t)
+                ).collect()
+            }
+        // no types in type list
+        rule empty_type() -> Vec<(String, TypeExpr)> =
+            "" {Vec::new()}
+        // value list
+        rule value_list() -> Vec<ValueExpr> =
+            l: (value_expr() ++ (_ "," _)) (_ ",")? {l}
+        // labeled value list
+        rule labeled_value_list() -> Vec<(String, ValueExpr)> =
+            l: (labeled_value() ++ (_ "," _)) (_ ",")? {l}
+        // value list with implicit labels
+        rule value_list_labeled() -> Vec<(String, ValueExpr)> =
+            l: value_list() {
+                l.into_iter().enumerate().map(
+                    |(n, t)| ("_".to_owned() + &n.to_string(), t)
+                ).collect()
+            }
+        // no values in value list
+        rule empty_value() -> Vec<(String, ValueExpr)> =
+            "" {Vec::new()}
 
         // ************************
         // PROGRAMMER-DEFINED NAMES
@@ -149,7 +178,7 @@ peg::parser!{
             }
             --
             // inserting universal type parameters
-            t: @ _ l: type_param_list() {
+            t: @ _ "{" _ l: type_list() _ "}" {
                 TypeExpr::TypeParams(Box::new(t), l)
             }
             --
@@ -160,39 +189,21 @@ peg::parser!{
             --
             // atoms
             t: variable_type() {t}
-            t: tuple_type() {t}
-            t: struct_type() {t}
-            t: choice_type() {t}
-            t: tagged_type() {t}
+            t: prod_type() {t}
+            t: sum_type() {t}
         }
         // type variable
         rule variable_type() -> TypeExpr =
             n: type_name() {TypeExpr::Variable(n)}
-        // tuple type (product with implcit field names)
-        rule tuple_type() -> TypeExpr =
-            "(" _ o: (l: (type_expr() ++ (_ "," _)) _ ("," _)? {l})? ")" {
-                TypeExpr::Tuple(match o {
-                    Some(l) => l,
-                    None    => Vec::new(),
-                })
+        // product type, implicit fields, explicit fields, or empty
+        rule prod_type() -> TypeExpr =
+            "(" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ ")" {
+                TypeExpr::Prod(l)
             }
-        // struct type (product with explicit field names)
-        rule struct_type() -> TypeExpr =
-            "(" _ l: (label_type_pair() ++ (_ "," _)) _ ("," _)? ")" {
-                TypeExpr::Struct(l)
-            }
-        // choice type (sum with implcit tag names)
-        rule choice_type() -> TypeExpr =
-            "[" _ o: (l: (type_expr() ++ (_ "," _)) _ ("," _)? {l})? "]" {
-                TypeExpr::Choice(match o {
-                    Some(l) => l,
-                    None    => Vec::new(),
-                })
-            }
-        // tagged type (product with explicit tag names)
-        rule tagged_type() -> TypeExpr =
-            "[" _ l: (label_type_pair() ++ (_ "," _)) _ ("," _)? "]" {
-                TypeExpr::Tagged(l)
+        // sum type, implicit fields, explicit fields, or empty
+        rule sum_type() -> TypeExpr =
+            "[" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ "]" {
+                TypeExpr::Sum(l)
             }
 
         // *****************
@@ -381,7 +392,7 @@ peg::parser!{
             }}
             --
             // function application (right associative) with optional type params
-            e1: @ _ o: (l: type_param_list()? _ {l}) !['+' | '-'] e2: (@) { ValueExpr {
+            e1: @ _ o: ("{" _ l: type_list() _ "}" _ {l})? !['+' | '-'] e2: (@) { ValueExpr {
                 variant: ExprVariant::BinaryOp(
                     BinOpVariant::Call(
                         match o {
@@ -399,16 +410,21 @@ peg::parser!{
             e: lit_expr() {e}
             e: closure_expr() {e}
             e: variable_expr() {e}
-            e: tuple_expr() {e}
-            e: struct_expr() {e}
-            e: choice_expr() {e}
-            e: tagged_expr() {e}
+            e: prod_expr() {e}
+            e: sum_expr() {e}
         }
         // any literal
         rule lit_expr() -> ValueExpr =
             quiet!{
-                lit_bool_expr() / lit_int_expr() / lit_float_expr() / lit_ascii_expr()
+                lit_unit_expr() / lit_bool_expr() / lit_int_expr() /
+                lit_float_expr() / lit_ascii_expr()
             } / expected!("literal expression")
+        // unit literal
+        rule lit_unit_expr() -> ValueExpr =
+            "(" _ ")" { ValueExpr {
+                variant:   ExprVariant::Prod(Vec::new()),
+                type_expr: Some(TypeExpr::Prod(Vec::new())),
+            }}
         // boolean literal
         rule lit_bool_expr() -> ValueExpr =
             b: (literal_true() / literal_false()) { ValueExpr {
@@ -457,30 +473,23 @@ peg::parser!{
                 }),
                 type_expr: None,
             }}
-        // tuple expression
-        rule tuple_expr() -> ValueExpr =
-            "(" _ l: (value_expr() ** (_ "," _)) _ ("," _)? ")" { ValueExpr {
-                variant:   ExprVariant::Tuple(l),
-                type_expr: None,
-            }}
-        // struct expression TODO: allow typed fields?
-        rule struct_expr() -> ValueExpr =
-            "(" _ l: (label_value_pair() ** (_ "," _)) _ ("," _)? ")" { ValueExpr {
-                variant:   ExprVariant::Struct(l),
-                type_expr: None,
-            }}
+        // product expression TODO: allow typed fields?
+        rule prod_expr() -> ValueExpr =
+            "(" _ l: (value_list_labeled() / labeled_value_list()) _ ")" {
+                ValueExpr {
+                    variant:   ExprVariant::Prod(l),
+                    type_expr: None,
+                }
+            }
         // choice expression TODO: allow types to imply position?
-        rule choice_expr() -> ValueExpr =
-            "[" _ e: value_expr() _ "]" { ValueExpr {
-                variant:   ExprVariant::Choice(Box::new(e)),
-                type_expr: None,
-            }}
         // tagged expression TODO: allow typed tags?
-        rule tagged_expr() -> ValueExpr =
-            "[" _ e: label_value_pair() _ "]" { ValueExpr {
-                variant:   ExprVariant::Tagged(e.0, Box::new(e.1)),
-                type_expr: None,
-            }}
+        rule sum_expr() -> ValueExpr =
+            "[" _ e: ((e: value_expr() {("_0".to_string(), e)}) / labeled_value()) _ "]" {
+                ValueExpr {
+                    variant:   ExprVariant::Sum(e.0, Box::new(e.1)),
+                    type_expr: None,
+                }
+            }
         /* TODO UFCS
         rule ufcs_call_exp() -> Expression
             = e1: exp_specifier "." n: var_name() e2: tuple_exp() {
@@ -505,8 +514,8 @@ peg::parser!{
                 match o {
                     Some(e) => e,
                     None    => ValueExpr {
-                        variant:   ExprVariant::Tuple(Vec::new()),
-                        type_expr: None, // TODO set to unit type
+                        variant:   ExprVariant::Prod(Vec::new()),
+                        type_expr: Some(TypeExpr::Prod(Vec::new())),
                     },
                 }
             )}
@@ -602,12 +611,12 @@ mod tests {
                 name: "Foo".to_string(),
                 expr: TypeExpr::Universal(
                     "A".to_string(),
-                    Box::new(TypeExpr::Tuple(Vec::from([
-                        TypeExpr::Variable("A".to_string()),
-                        TypeExpr::Tagged(Vec::from([
+                    Box::new(TypeExpr::Prod(Vec::from([
+                        ("_0".to_string(), TypeExpr::Variable("A".to_string())),
+                        ("_1".to_string(), TypeExpr::Sum(Vec::from([
                             ("int".to_string(), TypeExpr::Variable("Int".to_string())),
                             ("float".to_string(), TypeExpr::Variable("Float".to_string())),
-                        ])),
+                        ]))),
                     ]))),
                 ),
             })])

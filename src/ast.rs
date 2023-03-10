@@ -25,10 +25,8 @@ pub enum TypeExpr {
     TypeParams(Box<TypeExpr>, Vec<TypeExpr>),
     Universal(String, Box<TypeExpr>),
     Existential(String, Box<TypeExpr>),
-    Tuple(Vec<TypeExpr>),
-    Struct(Vec<(String, TypeExpr)>),
-    Choice(Vec<TypeExpr>),
-    Tagged(Vec<(String, TypeExpr)>),
+    Prod(Vec<(String, TypeExpr)>),
+    Sum(Vec<(String, TypeExpr)>),
     Function(Box<TypeExpr>, Box<TypeExpr>),
 }
 
@@ -46,10 +44,8 @@ pub enum ExprVariant {
     Literal(LitVariant),
     BinaryOp(BinOpVariant, Box<ValueExpr>, Box<ValueExpr>),
     UnaryOp(UnOpVariant, Box<ValueExpr>),
-    Tuple(Vec<ValueExpr>),
-    Struct(Vec<(String, ValueExpr)>),
-    Choice(Box<ValueExpr>),
-    Tagged(String, Box<ValueExpr>),
+    Prod(Vec<(String, ValueExpr)>),
+    Sum(String, Box<ValueExpr>),
     Closure(Closure),
 }
 
