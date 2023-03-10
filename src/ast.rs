@@ -27,7 +27,7 @@ pub enum TypeExpr {
     Existential(String, Box<TypeExpr>),
     Prod(Vec<(String, TypeExpr)>),
     Sum(Vec<(String, TypeExpr)>),
-    Function(Box<TypeExpr>, Box<TypeExpr>),
+    Function(Box<TypeExpr>, Box<TypeExpr>), // TODO add closure
 }
 
 #[derive(Debug, PartialEq)]
