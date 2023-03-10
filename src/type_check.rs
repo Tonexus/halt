@@ -1,6 +1,9 @@
 // tools for checking types
+
 use std::collections::HashSet;
 use std::collections::HashMap;
+
+use itertools::Itertools;
 
 use super::ast::*;
 
@@ -107,41 +110,50 @@ fn get_type_deps(
                 depends:     HashMap::new(),
                 used_params: net_params,
             };
+            let mut used_params_set = HashSet::new();
             for (_, t) in l.into_iter() {
                 let deps = get_type_deps(t, net_params, ctxt.clone())?;
-                // set used params to max of net params and branches
-                out.used_params = i32::max(out.used_params, deps.used_params);
+                used_params_set.insert(deps.used_params);
                 // combine dependency sets
                 for (name, m) in deps.depends.into_iter() {
                     // make sure params count for same type variable is same
                     match out.depends.insert(name, m) {
-                        Some(n) => {
-                            if n != m {
-                                return Err("Inconsistent number of type parameters");
-                            }
+                        Some(n) if n != m => {
+                            return Err("Inconsistent number of type parameters");
                         },
-                        None    => {},
+                        _ => {},
                     }
                 }
             }
-            return Ok(out);
+            // number of used params must be same across branches
+            match used_params_set.into_iter().exactly_one() {
+                Ok(n) => {
+                    // set used params to max of net params
+                    out.used_params = i32::max(out.used_params, n);
+                    return Ok(out);
+                },
+                _ => {
+                    return Err("Inconsistent number of type parameters");
+                }
+            }
         },
         TypeExpr::Function(t1, t2) => {
             let mut out = get_type_deps(*t1, net_params, ctxt.clone())?;
             let deps = get_type_deps(*t2, net_params, ctxt)?;
-            // set used params to max of net params and branches
+            // number of used params must be same across branches
+            if out.used_params != deps.used_params {
+                return Err("Inconsistent number of type parameters");
+            }
+            // set used params to max of net params
             out.used_params = i32::max(out.used_params, net_params);
-            out.used_params = i32::max(out.used_params, deps.used_params);
             // combine dependency sets
             for (name, m) in deps.depends.into_iter() {
                 // make sure params count for same type variable is same
                 match out.depends.insert(name, m) {
-                    Some(n) => {
-                        if n != m {
-                            return Err("Inconsistent number of type parameters");
-                        }
+                    Some(n) if n != m => {
+                        return Err("Inconsistent number of type parameters");
                     },
-                    None    => {},
+                    _ => {},
                 }
             }
             return Ok(out);
@@ -221,12 +233,25 @@ mod tests {
             "A! B? ([A, B], C{A} -> C{B})"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.used_params == 1);
+        assert!(deps.depends.len() == 1);
         for s in ["A", "B"].into_iter() {
             let val = deps.depends.get(s);
             assert!(val.is_none());
         }
         let val = deps.depends.get("C");
         assert!(*val.unwrap() == 0);
+
+        let deps = get_type_deps(type_expr(
+            "(A! A, (B! C! [B, C]){D})"
+        ).unwrap(), 0, HashSet::new()).unwrap();
+        assert!(deps.used_params == 1);
+        //assert!(deps.depends.length() == 1);
+        for s in ["A", "B", "C"].into_iter() {
+            let val = deps.depends.get(s);
+            assert!(val.is_none());
+        }
+        //let val = deps.depends.get("D");
+        //assert!(*val.unwrap() == 0);
     }
 
     #[test]
