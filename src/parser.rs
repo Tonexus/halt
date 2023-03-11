@@ -29,22 +29,31 @@ peg::parser!{
         // ********
 
         // TODO have true/false/i/inline/yield/enter just be unoverwritable vars?
-        rule kw_break()    = "break"
-        rule kw_continue() = "continue"
-        rule kw_else()     = "else"
-        rule kw_false()    = "false"
-        rule kw_from()     = "from"
-        rule kw_i()        = "i"
-        rule kw_if()       = "if"
-        rule kw_let()      = "let"
-        rule kw_loop()     = "loop"
-        rule kw_match()    = "match"
-        rule kw_return()   = "return"
-        rule kw_to()       = "to"
-        rule kw_true()     = "true"
-        rule kw() = (kw_break() / kw_continue() / kw_else() / kw_false() /
-            kw_from() / kw_i() / kw_if() / kw_let() / kw_loop() / kw_match() /
-            kw_return() / kw_to() / kw_true()) !name_char()
+        rule kw_arr()      = "Arr" !name_char()
+        rule kw_ascii()    = "Ascii" !name_char()
+        rule kw_bool( )    = "Bool" !name_char()
+        rule kw_break()    = "break" !name_char()
+        rule kw_continue() = "continue" !name_char()
+        rule kw_else()     = "else" !name_char()
+        rule kw_enum()     = "N" (s: $(num()+) {? s.parse::<u32>().map_err(|_| "u32")}) !name_char()
+        rule kw_false()    = "false" !name_char()
+        rule kw_float()    = "F32" !name_char()
+        rule kw_from()     = "from" !name_char()
+        rule kw_i()        = "i" !name_char()
+        rule kw_if()       = "if" !name_char()
+        rule kw_int()      = ['S' | 'U'] ("8" / "16" / "32" / "Size") !name_char()
+        rule kw_let()      = "let" !name_char()
+        rule kw_loop()     = "loop" !name_char()
+        rule kw_match()    = "match" !name_char()
+        rule kw_opt()      = "Opt" !name_char()
+        rule kw_res()      = "Res" !name_char()
+        rule kw_return()   = "return" !name_char()
+        rule kw_to()       = "to" !name_char()
+        rule kw_true()     = "true" !name_char()
+        rule kw() = kw_arr() / kw_ascii() / kw_bool() / kw_break() /
+            kw_continue() / kw_else() / kw_enum() / kw_false() / kw_float() /
+            kw_from() / kw_i() / kw_if() / kw_int() / kw_let() / kw_loop() /
+            kw_match() / kw_opt() / kw_res() / kw_return() / kw_to() / kw_true()
 
         // ********
         // LITERALS

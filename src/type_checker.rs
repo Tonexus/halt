@@ -7,6 +7,7 @@ use itertools::Itertools;
 use petgraph::{Graph, algo::toposort};
 
 use super::ast::*;
+use super::misc;
 
 #[derive(Debug, PartialEq)]
 struct Context {
@@ -39,7 +40,7 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 */
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
-    let mut types: HashMap<String, TypeExpr> = HashMap::new();
+    let mut types: HashMap<String, TypeExpr> = misc::get_basic_kword_type_exprs();
     let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
     // split types, building initial context
     for def in defs.into_iter() {
@@ -66,46 +67,54 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
 
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
-    let mut all_deps = HashMap::new();
+    let mut all_deps: HashMap<String, TypeDepParams> = HashMap::new();
 
-    for (name, type_expr) in types.into_iter() {
-        all_deps.insert(name, get_type_deps(&type_expr, 0, HashSet::new())?);
+    // for each type var get dependencies and possible number of params
+    for (name, type_expr) in types.iter() {
+        all_deps.insert(name.to_string(), get_type_deps(&type_expr, 0, HashSet::new())?);
     }
 
+    // get all dependencies that aren't defined
+    let mut missing_vars: HashSet<String> = HashSet::new();
+    for (var_name, deps) in all_deps.iter() {
+        for (dep_name, _) in deps.relat.iter() {
+            if all_deps.get(dep_name).is_none() {
+                missing_vars.insert(dep_name.to_string());
+            }
+        }
+    }
     let mut dep_graph: Graph<String, (i32, i32)> = Graph::new();
     // TODO build acyclic topological order
     return Ok(());
 }
 
-fn get_keyword_type_params(type_name: String) -> Result<i32, ()> {
+// get type params for keyword types that are numeric or otherwise special
+fn get_kword_type_params(type_name: String) -> Result<i32, ()> {
     use lazy_static::lazy_static;
     use regex::{Regex, Captures};
     match type_name.as_str() {
-        "Bool"  => return Ok(0),
+        // integer numerics
         "USize" => return Ok(0),
+        "U32"   => return Ok(0),
+        "U16"   => return Ok(0),
+        "U8"    => return Ok(0),
         "SSize" => return Ok(0),
-        "Opt"   => return Ok(1),
-        "Res"   => return Ok(2),
+        "S32"   => return Ok(0),
+        "S16"   => return Ok(0),
+        "S8"    => return Ok(0),
+        // floating point number
+        "F32"   => return Ok(0),
+        // array
+        "Arr"   => return Ok(2),
         _       => {
             let f = |c: Option<Captures>| c.and_then(|x| x.get(1)).
                 and_then(|x| x.as_str().parse::<u32>().ok());
             lazy_static! {
                 // enum for up to 2^32 choices
                 static ref ENUM: Regex = Regex::new("^N(\\d+)$").unwrap();
-                // 32 bit float
-                static ref FLOAT: Regex = Regex::new("^F(\\d+)$").unwrap();
-                // 8, 16, or 32 bit signed or unsigned int
-                static ref INT: Regex = Regex::new("^[S|U](\\d+)$").unwrap();
             }
             if f(ENUM.captures(&type_name)).is_some() {
                 return Ok(0);
-            }
-            if let Some(32) = f(FLOAT.captures(&type_name)) {
-                return Ok(0);
-            }
-            match f(INT.captures(&type_name)) {
-                Some(8) | Some(16) | Some(32) => return Ok(0),
-                _ => {},
             }
         },
     }
