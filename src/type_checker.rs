@@ -168,7 +168,7 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 }
 */
 
-pub fn type_check(defs: Vec<Definition>) -> Result<(), &'static str> {
+pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
     let mut types: HashMap<String, TypeExpr> = HashMap::new();
     let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
     //let mut type_ctxt = HashMap::new();
@@ -213,11 +213,11 @@ pub fn type_check(defs: Vec<Definition>) -> Result<(), &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::parser::program_parser::*;
+    use super::super::*;
 
     #[test]
     fn basic_type() {
-        let deps = get_type_deps(&type_expr(
+        let deps = get_type_deps(&parser::type_expr(
             "([A, B], C -> C)"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 0);
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn medium_type() {
-        let deps = get_type_deps(&type_expr(
+        let deps = get_type_deps(&parser::type_expr(
             "A! B? ([A, B], C{A} -> C{B})"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
@@ -242,7 +242,7 @@ mod tests {
         let val = deps.relat.get("C");
         assert!(*val.unwrap() == 0);
 
-        let deps = get_type_deps(&type_expr(
+        let deps = get_type_deps(&parser::type_expr(
             "(A! A, (B! C! [B, C]){D})"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
@@ -260,10 +260,10 @@ mod tests {
 
     #[test]
     fn basic_type_fail() {
-        assert!(get_type_deps(&type_expr(
+        assert!(get_type_deps(&parser::type_expr(
             "(A! B, C)"
         ).unwrap(), 0, HashSet::new()).is_err());
-        assert!(get_type_deps(&type_expr(
+        assert!(get_type_deps(&parser::type_expr(
             "(A, B{C! D})"
         ).unwrap(), 0, HashSet::new()).is_err());
     }

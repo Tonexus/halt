@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::{env, fs::File, io::Read};
-use regex::Regex;
-
 mod ast;
 mod parser;
-mod type_check;
+mod type_checker;
+
+use std::{env, fs::File, io::Read};
+use regex::Regex;
 
 fn main() -> Result<(), &'static str> {
     // open argument as file
@@ -22,11 +22,11 @@ fn main() -> Result<(), &'static str> {
     let whitespace_remover = Regex::new("\\p{White_Space}+").unwrap();
     let contents = whitespace_remover.replace_all(&contents, " ");
 
-    let out = parser::program_parser::defs(&contents);
+    let out = parser::defs(&contents);
     dbg!(&out);
     if let Ok(defs) = out {
             println!("Parse success");
-            return type_check::type_check(defs);
+            return type_checker::check_defs(defs);
     } else {
         println!("{}", &contents);
         println!("Parse failed");

@@ -2,8 +2,10 @@
 
 use super::ast::*;
 
+pub use program_parser::*;
+
 peg::parser!{
-    pub grammar program_parser() for str {
+    grammar program_parser() for str {
         // **************
         // CHARACTER SETS
         // **************
@@ -593,7 +595,6 @@ peg::parser!{
 #[cfg(test)]
 mod tests {
     use super::*;
-    use program_parser::*;
     #[test]
     fn basic_type_def() {
         assert_eq!(defs("Foo := Int;"), Ok(
