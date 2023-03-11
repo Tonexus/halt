@@ -31,6 +31,49 @@ struct TypeDepParams {
     req_params: i32,
 }
 
+/*
+fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(), &'static str> {
+    Ok(())
+}
+*/
+
+pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
+    let mut types: HashMap<String, TypeExpr> = HashMap::new();
+    let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
+    // split types, building initial context
+    for def in defs.into_iter() {
+        match def {
+            Definition::Type(t) => {
+                if types.contains_key(&t.name) {
+                    return Err("Type is already defined.");
+                }
+                types.insert(t.name.clone(), t.expr);
+            }
+            Definition::Const(c) => {
+                if consts.contains_key(&c.name) {
+                    return Err("Constant is already defined.");
+                }
+                consts.insert(c.name, (c.type_expr, c.expr));
+            }
+        }
+    }
+    // validate types
+    validate_types(&types)?;
+    // build initial context
+    return Ok(());
+}
+
+fn validate_types(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
+    let mut all_deps = HashMap::new();
+
+    for (name, type_expr) in types.into_iter() {
+        all_deps.insert(name, get_type_deps(&type_expr, 0, HashSet::new())?);
+    }
+
+    // TODO build acyclic topological order
+    return Ok(());
+}
+
 // gets the type variable dependencies and type parameter information
 fn get_type_deps(
     expr:       &TypeExpr,
@@ -162,58 +205,10 @@ fn get_type_deps(
     }
 }
 
-/*
-fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(), &'static str> {
-    Ok(())
-}
-*/
-
-pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
-    let mut types: HashMap<String, TypeExpr> = HashMap::new();
-    let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
-    //let mut type_ctxt = HashMap::new();
-    //let mut ctxt   = Context{types: HashMap::new(), values: HashMap::new()};
-    // split types and consts, building initial context
-    for def in defs.into_iter() {
-        match def {
-            Definition::Type(t) => {
-                if types.contains_key(&t.name) {
-                    return Err("Type is already defined.");
-                }
-                types.insert(t.name.clone(), t.expr);
-                //type_ctxt.insert(t.name, TypeVarState::Global);
-                //ctxt.types.insert(c.name, Vec::from([(t.expr)]));
-            }
-            Definition::Const(c) => {
-                if consts.contains_key(&c.name) {
-                    return Err("Constant is already defined.");
-                }
-                consts.insert(c.name, (c.type_expr, c.expr));
-                //ctxt.values.insert(c.name, Vec::from([(c.type_expr, c.expr)]));
-            }
-        }
-    }
-    for (name, type_expr) in types.into_iter() {
-        println!("parsed type {}!", name);
-        match get_type_deps(&type_expr, 0, HashSet::new()) {
-            Ok(deps) => {
-                for (dep_name, count) in deps.relat.into_iter() {
-                    println!("{} has {} parameters!", dep_name, count);
-                }
-            }
-            Err(out) => {
-                println!("check failed with error \"{}\"", out)
-            }
-        }
-    }
-    // build initial context
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::super::*;
+    use super::super::parser;
 
     #[test]
     fn basic_type() {
