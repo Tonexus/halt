@@ -47,34 +47,32 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
         match def {
             Definition::Type(t) => {
                 if types.contains_key(&t.name) {
-                    return Err(TypeError::MultiTypeDef(t.name)).map_err(|e| e.into());
+                    return Err(TypeError::MultiDef(t.name).into());
                 }
                 types.insert(t.name.clone(), t.expr);
             }
             Definition::Const(c) => {
                 if consts.contains_key(&c.name) {
-                    return Err(ValueError::MultiConstDef(c.name)).map_err(|e| e.into());
+                    return Err(ValueError::MultiDef(c.name).into());
                 }
                 consts.insert(c.name, (c.type_expr, c.expr));
             }
         }
     }
     // validate types
-    validate_type_defs(&types).map_err(|_| CompileError::DefaultErr)?;
-    //validate_type_defs(&types)?;
-    // build initial context
+    validate_type_defs(&types)?;
     return Ok(());
 }
 
 // TODO add context param if validating locally defined types
-fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
+fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
     let mut all_deps: HashMap<String, TypeDepParams> = HashMap::new();
     let mut dep_graph: Graph<String, i32> = Graph::new();
     let mut node_idx = HashMap::new();
 
     // for each type var get dependencies and possible number of params
     for (name, type_expr) in types.iter() {
-        all_deps.insert(name.to_string(), get_type_deps(&type_expr, 0, HashSet::new())?);
+        all_deps.insert(name.to_string(), get_type_deps(&type_expr, 0, HashSet::new()).map_err(|_| TypeError::DefaultErr)?);
         // also insert nodes into dependency graph
         node_idx.insert(name.to_string(), dep_graph.add_node(name.to_string()));
     }
@@ -82,7 +80,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static 
     // get all dependencies that aren't defined and get exact number params
     let mut exact_params: HashMap<String, i32> = HashMap::new();
     let mut missing_vars: HashSet<String> = HashSet::new();
-    for (_, deps) in all_deps.iter() {
+    for (var_name, deps) in all_deps.iter() {
         for (dep_name, _) in deps.relat.iter() {
             // insert missing into set
             if all_deps.get(dep_name).is_none() {
@@ -97,7 +95,12 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static 
             // merge exact, making sure params count for same type variable is same
             match exact_params.insert(dep_name.to_string(), *m) {
                 Some(n) if n != *m => {
-                    return Err("Inconsistent number of type parameters");
+                    return Err(TypeError::InconsistParams {
+                        main:  var_name.to_string(),
+                        check: dep_name.to_string(),
+                        m:     *m,
+                        n:     n,
+                    });
                 },
                 _ => {},
             }
@@ -109,7 +112,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static 
         if let Some(n) = get_kword_type_params(&var_name) {
             exact_params.insert(var_name, n);
         } else {
-            return Err("Type is not defined");
+            return Err(TypeError::Undef(var_name));
         }
     }
 
@@ -123,8 +126,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static 
 
     // get topological order
     let nodes = toposort(&dep_graph, None)
-        .map_err(|_| "Recursive definitions not allowed")?;
-    dbg!(nodes);
+        .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].clone()))?;
     return Ok(());
 }
 
@@ -164,8 +166,11 @@ fn get_kword_type_params(type_name: &String) -> Option<i32> {
 
 // gets the type variable dependencies and type parameter information
 fn get_type_deps(
+    // type expression to parse
     expr:       &TypeExpr,
+    // the net number of parameters required at this depth
     net_params: i32,
+    // context of defined type variables
     mut ctxt:   HashSet<String>,
 ) -> Result<TypeDepParams, &'static str> {
     // helper function to merge two dependency sets
@@ -245,7 +250,7 @@ fn get_type_deps(
                 }
                 return Ok(TypeDepParams {
                     relat:       HashMap::new(),
-                    exact:       HashMap::from([("()".to_string(), net_params)]),
+                    exact:       HashMap::new(),
                     req_params: net_params,
                 })
             }

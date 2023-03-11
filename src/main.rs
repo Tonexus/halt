@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let whitespace_remover = Regex::new("\\p{White_Space}+").context("Bad regex")?;
     let contents = whitespace_remover.replace_all(&contents, " ");
 
-    let defs = parser::defs(&contents)?;
+    let defs = parser::defs(&contents).map_err(|e| CompileError::from(e))?;
     return Ok(type_checker::check_defs(defs)?);
     /*dbg!(&out);
     if let Ok(defs) = out {

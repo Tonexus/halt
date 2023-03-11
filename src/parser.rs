@@ -188,15 +188,15 @@ peg::parser!{
                 TypeExpr::Function(Box::new(t1), Box::new(t2))
             }
             --
-            // inserting universal type parameters
-            t: @ _ "{" _ l: type_list() _ "}" {
-                TypeExpr::TypeParams(Box::new(t), l)
-            }
-            --
             // declare new universal type variable
             n: type_name() _ "!" _ t: @ {TypeExpr::Universal(n, Box::new(t))}
             // declare new existential type variable
             n: type_name() _ "?" _ t: @ {TypeExpr::Existential(n, Box::new(t))}
+            --
+            // inserting universal type parameters
+            t: @ _ "{" _ l: type_list() _ "}" {
+                TypeExpr::TypeParams(Box::new(t), l)
+            }
             --
             // atoms
             t: keyword_type() {t}
@@ -670,7 +670,19 @@ mod tests {
     }
 
     #[test]
-    fn basic_expr_order_of_ops_1() {
+    fn basic_type_expr() {
+        assert_eq!(type_expr("A! Foo{A}"), Ok(
+            TypeExpr::Universal("A".to_string(), Box::new(
+                TypeExpr::TypeParams(
+                    Box::new(TypeExpr::Variable("Foo".to_string())),
+                    Vec::from([TypeExpr::Variable("A".to_string())]),
+                )
+            ))
+        ));
+    }
+
+    #[test]
+    fn basic_value_expr() {
         // parenthesize as (foo())$
         assert_eq!(value_expr("foo()$"), Ok(
             ValueExpr {
@@ -681,10 +693,7 @@ mod tests {
                 type_expr: None,
             }
         ));
-    }
 
-    #[test]
-    fn basic_expr_order_of_ops_2() {
         // parenthesize as (a * b) - c
         assert_eq!(value_expr("a * b - c"), Ok(
             ValueExpr {
@@ -696,10 +705,7 @@ mod tests {
                 type_expr: None,
             }
         ));
-    }
 
-    #[test]
-    fn basic_expr_order_of_ops_3() {
         // parenthesize as (foo(a)) * (bar(b))
         assert_eq!(value_expr("foo(a) * bar(b)"), Ok(
             ValueExpr {
