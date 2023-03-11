@@ -8,6 +8,8 @@ edition = "2021"
 [dependencies]
 itertools   = "0.10.5"
 regex       = "1.7.1"
+thiserror   = "1.0.39"
+anyhow      = "1.0.69"
 petgraph    = "0.6.3"
 lazy_static = "1.4.0"
 peg         = "0.8.1"

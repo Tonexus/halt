@@ -1,30 +1,36 @@
 #![allow(dead_code)]
 
 mod ast;
+mod error;
 mod misc;
 mod parser;
 mod type_checker;
 
 use std::{env, fs::File, io::Read};
-use regex::Regex;
 
-fn main() -> Result<(), &'static str> {
+use regex::Regex;
+use anyhow::{Context, Result};
+
+use error::CompileError;
+
+fn main() -> Result<()> {
     // open argument as file
     let args: Vec<String> = env::args().collect();
-    let mut file = File::open(args[1].clone()).map_err(|_| "io error")?;
+    let mut file = File::open(args[1].clone()).context("Failed to open file")?;
     let mut contents = String::new();
-    file.read_to_string(&mut contents).map_err(|_| "io error")?;
+    file.read_to_string(&mut contents).context("Failed to read file")?;
 
     // remove comments
-    let comment_remover = Regex::new("//.*\n").unwrap();
+    let comment_remover = Regex::new("//.*\n").context("Bad regex")?;
     let contents = comment_remover.replace_all(&contents, "");
 
     // remove excess whitespace
-    let whitespace_remover = Regex::new("\\p{White_Space}+").unwrap();
+    let whitespace_remover = Regex::new("\\p{White_Space}+").context("Bad regex")?;
     let contents = whitespace_remover.replace_all(&contents, " ");
 
-    let out = parser::defs(&contents);
-    dbg!(&out);
+    let defs = parser::defs(&contents)?;
+    return Ok(type_checker::check_defs(defs)?);
+    /*dbg!(&out);
     if let Ok(defs) = out {
             println!("Parse success");
             return type_checker::check_defs(defs);
@@ -32,6 +38,6 @@ fn main() -> Result<(), &'static str> {
         println!("{}", &contents);
         println!("Parse failed");
         return Ok(());
-    }
+    }*/
 }
 

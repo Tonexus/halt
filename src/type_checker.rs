@@ -6,6 +6,7 @@ use itertools::Itertools;
 use petgraph::{Graph, algo::toposort};
 
 use super::ast::*;
+use super::error::{CompileError, TypeError, ValueError};
 use super::misc;
 
 #[derive(Debug, PartialEq)]
@@ -38,7 +39,7 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 }
 */
 
-pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
+pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
     let mut types: HashMap<String, TypeExpr> = misc::get_basic_kword_type_exprs();
     let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
     // split types, building initial context
@@ -46,20 +47,21 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
         match def {
             Definition::Type(t) => {
                 if types.contains_key(&t.name) {
-                    return Err("Type is already defined");
+                    return Err(TypeError::MultiTypeDef(t.name)).map_err(|e| e.into());
                 }
                 types.insert(t.name.clone(), t.expr);
             }
             Definition::Const(c) => {
                 if consts.contains_key(&c.name) {
-                    return Err("Constant is already defined");
+                    return Err(ValueError::MultiConstDef(c.name)).map_err(|e| e.into());
                 }
                 consts.insert(c.name, (c.type_expr, c.expr));
             }
         }
     }
     // validate types
-    validate_type_defs(&types)?;
+    validate_type_defs(&types).map_err(|_| CompileError::DefaultErr)?;
+    //validate_type_defs(&types)?;
     // build initial context
     return Ok(());
 }
