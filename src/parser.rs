@@ -55,9 +55,9 @@ peg::parser!{
             kw_from() / kw_i() / kw_if() / kw_int() / kw_let() / kw_loop() /
             kw_match() / kw_opt() / kw_res() / kw_return() / kw_to() / kw_true()
 
-        // ********
-        // LITERALS
-        // ********
+        // **************
+        // VALUE LITERALS
+        // **************
 
         // booleans
         rule literal_true() -> bool = kw_true() { true }
@@ -199,9 +199,16 @@ peg::parser!{
             n: type_name() _ "?" _ t: @ {TypeExpr::Existential(n, Box::new(t))}
             --
             // atoms
+            t: keyword_type() {t}
             t: variable_type() {t}
             t: prod_type() {t}
             t: sum_type() {t}
+        }
+        // keyword type
+        rule keyword_type() -> TypeExpr =
+            n: $(kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
+            kw_res() / kw_arr() / kw_ascii()) { 
+            TypeExpr::Variable(n.to_string())
         }
         // type variable
         rule variable_type() -> TypeExpr =
