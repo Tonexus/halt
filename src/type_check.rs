@@ -33,7 +33,7 @@ struct TypeDepParams {
 
 // gets the type variable dependencies and type parameter information
 fn get_type_deps(
-    expr:       TypeExpr,
+    expr:       &TypeExpr,
     net_params: i32,
     mut ctxt:   HashSet<String>,
 ) -> Result<TypeDepParams, &'static str> {
@@ -57,7 +57,7 @@ fn get_type_deps(
     match expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
-            if ctxt.contains(&s) {
+            if ctxt.contains(s) {
                 return Ok(TypeDepParams {
                     relat:      HashMap::new(),
                     exact:      HashMap::new(),
@@ -66,7 +66,7 @@ fn get_type_deps(
             }
             // not a locally-defined type var, is a dependency
             return Ok(TypeDepParams {
-                relat:      HashMap::from([(s, net_params)]),
+                relat:      HashMap::from([(s.to_string(), net_params)]),
                 exact:      HashMap::new(),
                 req_params: net_params,
             });
@@ -74,7 +74,7 @@ fn get_type_deps(
 
         // check all parameters exactly
         TypeExpr::TypeParams(t, l) => {
-            let mut out = get_type_deps(*t, net_params - l.len() as i32, ctxt.clone())?;
+            let mut out = get_type_deps(t, net_params - l.len() as i32, ctxt.clone())?;
             out.req_params = i32::max(out.req_params, net_params - l.len() as i32);
             for type_expr in l.into_iter() {
                 let deps = get_type_deps(type_expr, 0, ctxt.clone())?;
@@ -90,8 +90,8 @@ fn get_type_deps(
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            ctxt.insert(s);
-            let mut out = get_type_deps(*t, net_params + 1, ctxt)?;
+            ctxt.insert(s.to_string());
+            let mut out = get_type_deps(t, net_params + 1, ctxt)?;
             out.req_params = i32::max(out.req_params, net_params + 1);
             return Ok(out);
         },
@@ -99,8 +99,8 @@ fn get_type_deps(
         // adds locally-defined type var
         // TODO existential may have arbitrary number of type variables (for now assume not)
         TypeExpr::Existential(s, t) => {
-            ctxt.insert(s);
-            let mut out = get_type_deps(*t, net_params, ctxt)?;
+            ctxt.insert(s.to_string());
+            let mut out = get_type_deps(t, net_params, ctxt)?;
             out.req_params = i32::max(out.req_params, net_params);
             return Ok(out);
         },
@@ -114,7 +114,7 @@ fn get_type_deps(
                 }
                 return Ok(TypeDepParams {
                     relat:       HashMap::new(),
-                    exact:       HashMap::from([("$Terminal".to_string(), net_params)]),
+                    exact:       HashMap::from([("()".to_string(), net_params)]),
                     req_params: net_params,
                 })
             }
@@ -146,8 +146,8 @@ fn get_type_deps(
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Function(t1, t2) => {
-            let mut out = get_type_deps(*t1, net_params, ctxt.clone())?;
-            let deps = get_type_deps(*t2, net_params, ctxt)?;
+            let mut out = get_type_deps(t1, net_params, ctxt.clone())?;
+            let deps = get_type_deps(t2, net_params, ctxt)?;
             // number of used params must be same across branches
             if out.req_params != deps.req_params {
                 return Err("Inconsistent number of type parameters");
@@ -195,7 +195,7 @@ pub fn type_check(defs: Vec<Definition>) -> Result<(), &'static str> {
     }
     for (name, type_expr) in types.into_iter() {
         println!("parsed type {}!", name);
-        match get_type_deps(type_expr, 0, HashSet::new()) {
+        match get_type_deps(&type_expr, 0, HashSet::new()) {
             Ok(deps) => {
                 for (dep_name, count) in deps.relat.into_iter() {
                     println!("{} has {} parameters!", dep_name, count);
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn basic_type() {
-        let deps = get_type_deps(type_expr(
+        let deps = get_type_deps(&type_expr(
             "([A, B], C -> C)"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 0);
@@ -230,7 +230,7 @@ mod tests {
 
     #[test]
     fn medium_type() {
-        let deps = get_type_deps(type_expr(
+        let deps = get_type_deps(&type_expr(
             "A! B? ([A, B], C{A} -> C{B})"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
@@ -242,25 +242,28 @@ mod tests {
         let val = deps.relat.get("C");
         assert!(*val.unwrap() == 0);
 
-        let deps = get_type_deps(type_expr(
+        let deps = get_type_deps(&type_expr(
             "(A! A, (B! C! [B, C]){D})"
         ).unwrap(), 0, HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
-        //assert!(deps.relat.length() == 1);
+        assert!(deps.relat.len() == 0);
+        assert!(deps.exact.len() == 1);
         for s in ["A", "B", "C"].into_iter() {
             let val = deps.relat.get(s);
             assert!(val.is_none());
+            let val = deps.exact.get(s);
+            assert!(val.is_none());
         }
-        //let val = deps.relat.get("D");
-        //assert!(*val.unwrap() == 0);
+        let val = deps.exact.get("D");
+        assert!(*val.unwrap() == 0);
     }
 
     #[test]
     fn basic_type_fail() {
-        assert!(get_type_deps(type_expr(
+        assert!(get_type_deps(&type_expr(
             "(A! B, C)"
         ).unwrap(), 0, HashSet::new()).is_err());
-        assert!(get_type_deps(type_expr(
+        assert!(get_type_deps(&type_expr(
             "(A, B{C! D})"
         ).unwrap(), 0, HashSet::new()).is_err());
     }
