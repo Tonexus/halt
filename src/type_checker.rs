@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::collections::HashMap;
 
 use itertools::Itertools;
+use petgraph::{Graph, algo::toposort};
 
 use super::ast::*;
 
@@ -58,20 +59,57 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
         }
     }
     // validate types
-    validate_types(&types)?;
+    validate_type_defs(&types)?;
     // build initial context
     return Ok(());
 }
 
-fn validate_types(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
+// TODO add context param if validating locally defined types
+fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
     let mut all_deps = HashMap::new();
 
     for (name, type_expr) in types.into_iter() {
         all_deps.insert(name, get_type_deps(&type_expr, 0, HashSet::new())?);
     }
 
+    let mut dep_graph: Graph<String, (i32, i32)> = Graph::new();
     // TODO build acyclic topological order
     return Ok(());
+}
+
+fn get_keyword_type_params(type_name: String) -> Result<i32, ()> {
+    use lazy_static::lazy_static;
+    use regex::{Regex, Captures};
+    match type_name.as_str() {
+        "Bool"  => return Ok(0),
+        "USize" => return Ok(0),
+        "SSize" => return Ok(0),
+        "Opt"   => return Ok(1),
+        "Res"   => return Ok(2),
+        _       => {
+            let f = |c: Option<Captures>| c.and_then(|x| x.get(1)).
+                and_then(|x| x.as_str().parse::<u32>().ok());
+            lazy_static! {
+                // enum for up to 2^32 choices
+                static ref ENUM: Regex = Regex::new("^N(\\d+)$").unwrap();
+                // 32 bit float
+                static ref FLOAT: Regex = Regex::new("^F(\\d+)$").unwrap();
+                // 8, 16, or 32 bit signed or unsigned int
+                static ref INT: Regex = Regex::new("^[S|U](\\d+)$").unwrap();
+            }
+            if f(ENUM.captures(&type_name)).is_some() {
+                return Ok(0);
+            }
+            if let Some(32) = f(FLOAT.captures(&type_name)) {
+                return Ok(0);
+            }
+            match f(INT.captures(&type_name)) {
+                Some(8) | Some(16) | Some(32) => return Ok(0),
+                _ => {},
+            }
+        },
+    }
+    return Err(());
 }
 
 // gets the type variable dependencies and type parameter information

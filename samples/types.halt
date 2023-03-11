@@ -2,17 +2,20 @@
 
 // enums/untagged unions/sum types
 
-Bool := [
+// Bool
+Boolean := [
     true_like: (),
     false_like: (),
 ];
 
 // some of rust's useful basic generics
+// Res
 Result := A! B! [
     okay: A,
     fail: B,
 ];
 
+// Opt
 Option := A! [
     some: A,
     none: (),
@@ -21,9 +24,9 @@ Option := A! [
 // structs/product types
 // note that tuples are structs: (A, B, C) is equivalent to (_0: A, _1: B, _2: C)
 Point3D := (
-    x: Float,
-    y: Float,
-    z: Float,
+    x: F32,
+    y: F32,
+    z: F32,
 );
 
 FullName := (
