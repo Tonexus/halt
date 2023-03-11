@@ -1,7 +1,6 @@
 // tools for checking types
 
-use std::collections::HashSet;
-use std::collections::HashMap;
+use std::{iter, collections::{HashSet, HashMap}};
 
 use itertools::Itertools;
 use petgraph::{Graph, algo::toposort};
@@ -47,13 +46,13 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
         match def {
             Definition::Type(t) => {
                 if types.contains_key(&t.name) {
-                    return Err("Type is already defined.");
+                    return Err("Type is already defined");
                 }
                 types.insert(t.name.clone(), t.expr);
             }
             Definition::Const(c) => {
                 if consts.contains_key(&c.name) {
-                    return Err("Constant is already defined.");
+                    return Err("Constant is already defined");
                 }
                 consts.insert(c.name, (c.type_expr, c.expr));
             }
@@ -68,57 +67,97 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), &'static str> {
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), &'static str> {
     let mut all_deps: HashMap<String, TypeDepParams> = HashMap::new();
+    let mut dep_graph: Graph<String, i32> = Graph::new();
+    let mut node_idx = HashMap::new();
 
     // for each type var get dependencies and possible number of params
     for (name, type_expr) in types.iter() {
         all_deps.insert(name.to_string(), get_type_deps(&type_expr, 0, HashSet::new())?);
+        // also insert nodes into dependency graph
+        node_idx.insert(name.to_string(), dep_graph.add_node(name.to_string()));
     }
 
-    // get all dependencies that aren't defined
+    // get all dependencies that aren't defined and get exact number params
+    let mut exact_params: HashMap<String, i32> = HashMap::new();
     let mut missing_vars: HashSet<String> = HashSet::new();
-    for (var_name, deps) in all_deps.iter() {
+    for (_, deps) in all_deps.iter() {
         for (dep_name, _) in deps.relat.iter() {
+            // insert missing into set
             if all_deps.get(dep_name).is_none() {
                 missing_vars.insert(dep_name.to_string());
             }
         }
+        for (dep_name, m) in deps.exact.iter() {
+            // insert missing into set
+            if all_deps.get(dep_name).is_none() {
+                missing_vars.insert(dep_name.to_string());
+            }
+            // merge exact, making sure params count for same type variable is same
+            match exact_params.insert(dep_name.to_string(), *m) {
+                Some(n) if n != *m => {
+                    return Err("Inconsistent number of type parameters");
+                },
+                _ => {},
+            }
+        }
     }
-    let mut dep_graph: Graph<String, (i32, i32)> = Graph::new();
-    // TODO build acyclic topological order
+
+    // check if any dependencies missing
+    for var_name in missing_vars.into_iter() {
+        if let Some(n) = get_kword_type_params(&var_name) {
+            exact_params.insert(var_name, n);
+        } else {
+            return Err("Type is not defined");
+        }
+    }
+
+    // add dependency graph edges
+    for (s1, (s2, n)) in all_deps.into_iter()
+        .flat_map(|(s, m)| iter::repeat(s).zip(m.relat.into_iter())) {
+        node_idx.get(&s1)
+            .zip(node_idx.get(&s2))
+            .map(|(j, k)| dep_graph.add_edge(*j, *k, n));
+    }
+
+    // get topological order
+    let nodes = toposort(&dep_graph, None)
+        .map_err(|_| "Recursive definitions not allowed")?;
+    dbg!(nodes);
     return Ok(());
 }
 
 // get type params for keyword types that are numeric or otherwise special
-fn get_kword_type_params(type_name: String) -> Result<i32, ()> {
+fn get_kword_type_params(type_name: &String) -> Option<i32> {
     use lazy_static::lazy_static;
     use regex::{Regex, Captures};
     match type_name.as_str() {
         // integer numerics
-        "USize" => return Ok(0),
-        "U32"   => return Ok(0),
-        "U16"   => return Ok(0),
-        "U8"    => return Ok(0),
-        "SSize" => return Ok(0),
-        "S32"   => return Ok(0),
-        "S16"   => return Ok(0),
-        "S8"    => return Ok(0),
+        "USize" => return Some(0),
+        "U32"   => return Some(0),
+        "U16"   => return Some(0),
+        "U8"    => return Some(0),
+        "SSize" => return Some(0),
+        "S32"   => return Some(0),
+        "S16"   => return Some(0),
+        "S8"    => return Some(0),
         // floating point number
-        "F32"   => return Ok(0),
+        "F32"   => return Some(0),
         // array
-        "Arr"   => return Ok(2),
+        "Arr"   => return Some(2),
         _       => {
-            let f = |c: Option<Captures>| c.and_then(|x| x.get(1)).
-                and_then(|x| x.as_str().parse::<u32>().ok());
+            let f = |c: Option<Captures>| c
+                .and_then(|x| x.get(1))
+                .and_then(|x| x.as_str().parse::<u32>().ok());
             lazy_static! {
                 // enum for up to 2^32 choices
                 static ref ENUM: Regex = Regex::new("^N(\\d+)$").unwrap();
             }
-            if f(ENUM.captures(&type_name)).is_some() {
-                return Ok(0);
+            if f(ENUM.captures(type_name)).is_some() {
+                return Some(0);
             }
         },
     }
-    return Err(());
+    return None;
 }
 
 // gets the type variable dependencies and type parameter information
