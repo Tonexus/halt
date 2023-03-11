@@ -24,11 +24,11 @@ struct Context {
 // type parameters
 struct TypeDepParams {
     // dependencies for which the relative number of type parameters is known
-    depends:     HashMap<String, i32>,
-    // dependencies for which the number of type parameters is exactly known
-    //strict_deps: HashMap<String, i32>,
-    // total allowed parameters for this type
-    used_params: i32,
+    relat:      HashMap<String, i32>,
+    // dependencies for which the exact number of type parameters is known
+    exact:      HashMap<String, i32>,
+    // minimum number of parameters to complete this type
+    req_params: i32,
 }
 
 // gets the type variable dependencies and type parameter information
@@ -37,99 +37,105 @@ fn get_type_deps(
     net_params: i32,
     mut ctxt:   HashSet<String>,
 ) -> Result<TypeDepParams, &'static str> {
+    // helper function to merge two dependency sets
+    fn merge(
+        one: &mut HashMap<String, i32>,
+        two: HashMap<String, i32>
+    ) -> Result<(), &'static str> {
+        for (name, m) in two.into_iter() {
+            // make sure params count for same type variable is same
+            match one.insert(name, m) {
+                Some(n) if n != m => {
+                    return Err("Inconsistent number of type parameters");
+                },
+                _ => {},
+            }
+        }
+        return Ok(());
+    }
+
     match expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
             if ctxt.contains(&s) {
                 return Ok(TypeDepParams {
-                    depends:     HashMap::new(),
-                    used_params: net_params,
+                    relat:      HashMap::new(),
+                    exact:      HashMap::new(),
+                    req_params: net_params,
                 });
             }
             // not a locally-defined type var, is a dependency
             return Ok(TypeDepParams {
-                depends:     HashMap::from([(s, net_params)]),
-                used_params: net_params,
+                relat:      HashMap::from([(s, net_params)]),
+                exact:      HashMap::new(),
+                req_params: net_params,
             });
         },
+
+        // check all parameters exactly
         TypeExpr::TypeParams(t, l) => {
             let mut out = get_type_deps(*t, net_params - l.len() as i32, ctxt.clone())?;
-            out.used_params = i32::max(out.used_params, net_params - l.len() as i32);
+            out.req_params = i32::max(out.req_params, net_params - l.len() as i32);
             for type_expr in l.into_iter() {
                 let deps = get_type_deps(type_expr, 0, ctxt.clone())?;
-                if deps.used_params > 0 {
+                if deps.req_params > 0 {
                     return Err("Cannot supply type parameters to type parameter");
                 }
-                /*for (dep_name, params) in deps.strict_deps.into_iter() {
-                    if let Ok(params2) = out.strict_deps.get(&dep_name) {
-                        if params != params2 {
-                            return Err("Inconsistent number of type parameters");
-                        }
-                    } else {
-                        out.strict_deps.insert(dep_name, params);
-                    }
-                }
-                for (dep_name, params) in deps.weak_deps.into_iter() {
-                    if let Ok(params2) = out.strict_deps.get(&dep_name) {
-                        if params != params2 {
-                            return Err("Inconsistent number of type parameters");
-                        }
-                    } else {
-                        out.strict_deps.insert(dep_name, params);
-                    }
-                }*/
+                // combine dependency sets, BOTH into exact, since can take no params
+                merge(&mut out.exact, deps.relat)?;
+                merge(&mut out.exact, deps.exact)?;
             }
             return Ok(out);
         },
+
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
             ctxt.insert(s);
             let mut out = get_type_deps(*t, net_params + 1, ctxt)?;
-            out.used_params = i32::max(out.used_params, net_params + 1);
+            out.req_params = i32::max(out.req_params, net_params + 1);
             return Ok(out);
         },
+
         // adds locally-defined type var
+        // TODO existential may have arbitrary number of type variables (for now assume not)
         TypeExpr::Existential(s, t) => {
             ctxt.insert(s);
             let mut out = get_type_deps(*t, net_params, ctxt)?;
-            out.used_params = i32::max(out.used_params, net_params);
+            out.req_params = i32::max(out.req_params, net_params);
             return Ok(out);
         },
+
+        // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
-            // is terminal type, so cannot be given any parameters
             if l.len() == 0 {
+                // empty type cannot have any type parameters
                 if net_params < 0 {
                     return Err("Too many supplied type parameters");
                 }
                 return Ok(TypeDepParams {
-                    depends:     HashMap::from([("$Terminal".to_string(), net_params)]),
-                    used_params: net_params,
+                    relat:       HashMap::new(),
+                    exact:       HashMap::from([("$Terminal".to_string(), net_params)]),
+                    req_params: net_params,
                 })
             }
             let mut out = TypeDepParams {
-                depends:     HashMap::new(),
-                used_params: net_params,
+                relat:       HashMap::new(),
+                exact:       HashMap::new(),
+                req_params: net_params,
             };
-            let mut used_params_set = HashSet::new();
+            let mut req_params_set = HashSet::new();
             for (_, t) in l.into_iter() {
                 let deps = get_type_deps(t, net_params, ctxt.clone())?;
-                used_params_set.insert(deps.used_params);
+                req_params_set.insert(deps.req_params);
                 // combine dependency sets
-                for (name, m) in deps.depends.into_iter() {
-                    // make sure params count for same type variable is same
-                    match out.depends.insert(name, m) {
-                        Some(n) if n != m => {
-                            return Err("Inconsistent number of type parameters");
-                        },
-                        _ => {},
-                    }
-                }
+                merge(&mut out.relat, deps.relat)?;
+                merge(&mut out.exact, deps.exact)?;
             }
             // number of used params must be same across branches
-            match used_params_set.into_iter().exactly_one() {
+            match req_params_set.into_iter().exactly_one() {
                 Ok(n) => {
                     // set used params to max of net params
-                    out.used_params = i32::max(out.used_params, n);
+                    out.req_params = i32::max(out.req_params, n);
                     return Ok(out);
                 },
                 _ => {
@@ -137,25 +143,20 @@ fn get_type_deps(
                 }
             }
         },
+
+        // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Function(t1, t2) => {
             let mut out = get_type_deps(*t1, net_params, ctxt.clone())?;
             let deps = get_type_deps(*t2, net_params, ctxt)?;
             // number of used params must be same across branches
-            if out.used_params != deps.used_params {
+            if out.req_params != deps.req_params {
                 return Err("Inconsistent number of type parameters");
             }
             // set used params to max of net params
-            out.used_params = i32::max(out.used_params, net_params);
+            out.req_params = i32::max(out.req_params, net_params);
             // combine dependency sets
-            for (name, m) in deps.depends.into_iter() {
-                // make sure params count for same type variable is same
-                match out.depends.insert(name, m) {
-                    Some(n) if n != m => {
-                        return Err("Inconsistent number of type parameters");
-                    },
-                    _ => {},
-                }
-            }
+            merge(&mut out.relat, deps.relat)?;
+            merge(&mut out.exact, deps.exact)?;
             return Ok(out);
         },
     }
@@ -196,7 +197,7 @@ pub fn type_check(defs: Vec<Definition>) -> Result<(), &'static str> {
         println!("parsed type {}!", name);
         match get_type_deps(type_expr, 0, HashSet::new()) {
             Ok(deps) => {
-                for (dep_name, count) in deps.depends.into_iter() {
+                for (dep_name, count) in deps.relat.into_iter() {
                     println!("{} has {} parameters!", dep_name, count);
                 }
             }
@@ -219,9 +220,9 @@ mod tests {
         let deps = get_type_deps(type_expr(
             "([A, B], C -> C)"
         ).unwrap(), 0, HashSet::new()).unwrap();
-        assert!(deps.used_params == 0);
+        assert!(deps.req_params == 0);
         for s in ["A", "B", "C"].into_iter() {
-            let val = deps.depends.get(s);
+            let val = deps.relat.get(s);
             assert!(val.is_some());
             assert!(*val.unwrap() == 0);
         }
@@ -232,25 +233,25 @@ mod tests {
         let deps = get_type_deps(type_expr(
             "A! B? ([A, B], C{A} -> C{B})"
         ).unwrap(), 0, HashSet::new()).unwrap();
-        assert!(deps.used_params == 1);
-        assert!(deps.depends.len() == 1);
+        assert!(deps.req_params == 1);
+        assert!(deps.relat.len() == 1);
         for s in ["A", "B"].into_iter() {
-            let val = deps.depends.get(s);
+            let val = deps.relat.get(s);
             assert!(val.is_none());
         }
-        let val = deps.depends.get("C");
+        let val = deps.relat.get("C");
         assert!(*val.unwrap() == 0);
 
         let deps = get_type_deps(type_expr(
             "(A! A, (B! C! [B, C]){D})"
         ).unwrap(), 0, HashSet::new()).unwrap();
-        assert!(deps.used_params == 1);
-        //assert!(deps.depends.length() == 1);
+        assert!(deps.req_params == 1);
+        //assert!(deps.relat.length() == 1);
         for s in ["A", "B", "C"].into_iter() {
-            let val = deps.depends.get(s);
+            let val = deps.relat.get(s);
             assert!(val.is_none());
         }
-        //let val = deps.depends.get("D");
+        //let val = deps.relat.get("D");
         //assert!(*val.unwrap() == 0);
     }
 
@@ -258,7 +259,10 @@ mod tests {
     fn basic_type_fail() {
         assert!(get_type_deps(type_expr(
             "(A! B, C)"
-        ).unwrap(), 0, HashSet::new()).is_err())
+        ).unwrap(), 0, HashSet::new()).is_err());
+        assert!(get_type_deps(type_expr(
+            "(A, B{C! D})"
+        ).unwrap(), 0, HashSet::new()).is_err());
     }
 }
 

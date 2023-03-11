@@ -7,12 +7,12 @@ mod ast;
 mod parser;
 mod type_check;
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), &'static str> {
     // open argument as file
     let args: Vec<String> = env::args().collect();
-    let mut file = File::open(args[1].clone())?;
+    let mut file = File::open(args[1].clone()).map_err(|_| "io error")?;
     let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
+    file.read_to_string(&mut contents).map_err(|_| "io error")?;
 
     // remove comments
     let comment_remover = Regex::new("//.*\n").unwrap();
@@ -24,17 +24,13 @@ fn main() -> std::io::Result<()> {
 
     let out = parser::program_parser::defs(&contents);
     dbg!(&out);
-    match out {
-        Ok(defs) => {
+    if let Ok(defs) = out {
             println!("Parse success");
-            type_check::type_check(defs);
-            return Ok(())
-        },
-        Err(_)   => {
-            println!("{}", &contents);
-            println!("Parse failed");
-            return Ok(());
-        }
+            return type_check::type_check(defs);
+    } else {
+        println!("{}", &contents);
+        println!("Parse failed");
+        return Ok(());
     }
 }
 
