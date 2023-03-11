@@ -5,7 +5,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum CompileError {
-    #[error("Parsing failed at {}. Expected {}", .source.location, .source.expected)]
+    #[error(
+        "Parsing failed at {} (around \"{}\"). Expected {}",
+        .source.location,
+        .source.location, // TODO actually print the line
+        .source.expected,
+    )]
     Parse {
         #[from]
         source: peg::error::ParseError<peg::str::LineCol>,
@@ -24,15 +29,14 @@ pub enum TypeError {
     MultiDef(String),
     #[error("Type {0} is undefined.")]
     Undef(String),
-    #[error("Type {0} is recursively defined.")]
+    #[error("Type {0} cannot be recursively defined.")]
     RecurDef(String),
-    #[error("Type {check} has an inconsistent number of type parameters ({m}, {n}) in the definition of {main}.")]
-    InconsistParams {
-        main:  String,
-        check: String,
-        m:     i32,
-        n:     i32,
-    },
+    // TODO in which def
+    #[error("Type {name} has an inconsistent number of type parameters.")]
+    InconsistParams {name: String},
+    // TODO type name, in which def
+    #[error("Type cannot have type parameters.")]
+    CannotHaveParams,
     #[error("You are bad and should feel bad.")]
     DefaultErr,
 }

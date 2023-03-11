@@ -10,8 +10,6 @@ peg::parser!{
         // CHARACTER SETS
         // **************
 
-        // 1 or 0 space (all other whitespace already removed)
-        rule _            = quiet!{[' ']?}
         rule num()        = ['0'..='9']
         rule upper()      = ['A'..='Z']
         rule lower()      = ['a'..='z']
@@ -22,7 +20,14 @@ peg::parser!{
         // valid characters in type variable names
         rule type_char()  = ['A'..='Z' | 'a'..='z' | '0'..='9']
         // valid characters in all variable names
-        rule name_char()  = ['a'..='z' | 'A'..='Z' | '0'..='9' | '_']
+        rule name_char()  = ['A'..='Z' | 'a'..='z' | '0'..='9' | '_']
+
+        // ***************
+        // GENERAL PARSING
+        // ***************
+
+        // any white space or comment
+        rule _            = quiet!{([' ' | '\t' | '\r' | '\n'] / ("//" [^ '\n']*))*}
 
         // ********
         // KEYWORDS
@@ -493,7 +498,7 @@ peg::parser!{
             }}
         // product expression TODO: allow typed fields?
         rule prod_expr() -> ValueExpr =
-            "(" _ l: (value_list_labeled() / labeled_value_list()) _ ")" {
+            "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
                 ValueExpr {
                     variant:   ExprVariant::Prod(l),
                     type_expr: None,
@@ -502,7 +507,7 @@ peg::parser!{
         // choice expression TODO: allow types to imply position?
         // tagged expression TODO: allow typed tags?
         rule sum_expr() -> ValueExpr =
-            "[" _ e: ((e: value_expr() {("_0".to_string(), e)}) / labeled_value()) _ "]" {
+            "[" _ e: (labeled_value() / (e: value_expr() {("_0".to_string(), e)})) _ "]" {
                 ValueExpr {
                     variant:   ExprVariant::Sum(e.0, Box::new(e.1)),
                     type_expr: None,
@@ -683,6 +688,19 @@ mod tests {
 
     #[test]
     fn basic_value_expr() {
+        assert_eq!(value_expr("[some = 1 + 1]"), Ok(
+            ValueExpr {
+                variant:   ExprVariant::Sum(
+                    "some".to_string(),
+                    Box::new(value_expr("1 + 1").unwrap()),
+                ),
+                type_expr: None,
+            }
+        ));
+    }
+
+    #[test]
+    fn basic_value_expr_order() {
         // parenthesize as (foo())$
         assert_eq!(value_expr("foo()$"), Ok(
             ValueExpr {

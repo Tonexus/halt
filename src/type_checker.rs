@@ -80,7 +80,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
     // get all dependencies that aren't defined and get exact number params
     let mut exact_params: HashMap<String, i32> = HashMap::new();
     let mut missing_vars: HashSet<String> = HashSet::new();
-    for (var_name, deps) in all_deps.iter() {
+    for (_, deps) in all_deps.iter() {
         for (dep_name, _) in deps.relat.iter() {
             // insert missing into set
             if all_deps.get(dep_name).is_none() {
@@ -95,12 +95,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
             // merge exact, making sure params count for same type variable is same
             match exact_params.insert(dep_name.to_string(), *m) {
                 Some(n) if n != *m => {
-                    return Err(TypeError::InconsistParams {
-                        main:  var_name.to_string(),
-                        check: dep_name.to_string(),
-                        m:     *m,
-                        n:     n,
-                    });
+                    return Err(TypeError::InconsistParams {name: dep_name.to_string()});
                 },
                 _ => {},
             }
@@ -172,17 +167,17 @@ fn get_type_deps(
     net_params: i32,
     // context of defined type variables
     mut ctxt:   HashSet<String>,
-) -> Result<TypeDepParams, &'static str> {
+) -> Result<TypeDepParams, TypeError> {
     // helper function to merge two dependency sets
     fn merge(
         one: &mut HashMap<String, i32>,
         two: HashMap<String, i32>
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), TypeError> {
         for (name, m) in two.into_iter() {
             // make sure params count for same type variable is same
-            match one.insert(name, m) {
+            match one.insert(name.clone(), m) {
                 Some(n) if n != m => {
-                    return Err("Inconsistent number of type parameters");
+                    return Err(TypeError::InconsistParams {name: name});
                 },
                 _ => {},
             }
@@ -214,9 +209,10 @@ fn get_type_deps(
             out.req_params = i32::max(out.req_params, net_params - l.len() as i32);
             for type_expr in l.into_iter() {
                 let deps = get_type_deps(type_expr, 0, ctxt.clone())?;
-                if deps.req_params > 0 {
+                // TODO allowed?
+                /*if deps.req_params > 0 {
                     return Err("Cannot supply type parameters to type parameter");
-                }
+                }*/
                 // combine dependency sets, BOTH into exact, since can take no params
                 merge(&mut out.exact, deps.relat)?;
                 merge(&mut out.exact, deps.exact)?;
@@ -246,7 +242,7 @@ fn get_type_deps(
             if l.len() == 0 {
                 // empty type cannot have any type parameters
                 if net_params < 0 {
-                    return Err("Too many supplied type parameters");
+                    return Err(TypeError::CannotHaveParams);
                 }
                 return Ok(TypeDepParams {
                     relat:       HashMap::new(),
@@ -275,7 +271,7 @@ fn get_type_deps(
                     return Ok(out);
                 },
                 _ => {
-                    return Err("Inconsistent number of type parameters");
+                    return Err(TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
                 }
             }
         },
@@ -286,7 +282,7 @@ fn get_type_deps(
             let deps = get_type_deps(t2, net_params, ctxt)?;
             // number of used params must be same across branches
             if out.req_params != deps.req_params {
-                return Err("Inconsistent number of type parameters");
+                return Err(TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
             }
             // set used params to max of net params
             out.req_params = i32::max(out.req_params, net_params);
