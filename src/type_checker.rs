@@ -215,7 +215,7 @@ fn get_type_params(
             return one
                 .into_iter()
                 .exactly_one()
-                .map_err(|_| TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
+                .map_err(|_| TypeError::InconsParams("Bob".to_string())); // TODO fix
         },
 
         // must check all subtrees, number of parameters to each must be the same
@@ -224,7 +224,7 @@ fn get_type_params(
             let m = get_type_params(t2, num_params, vars)?;
             // number of used params must be same across branches
             if n != m {
-                return Err(TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
+                return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
             }
             return Ok(n);
         },
@@ -296,79 +296,126 @@ mod tests {
     use super::*;
     use super::super::parser;
 
-   /* #[test]
-    fn basic_type_1() {
+    #[test]
+    fn basic_type_deps_1() {
         let deps = get_type_deps(&parser::type_expr(
             "([A, B], C -> C)"
-        ).unwrap(), HashSet::new()).unwrap();
-        assert!(deps.req_params == 0);
+        ).unwrap(), HashSet::new());
         for s in ["A", "B", "C"].into_iter() {
-            let val = deps.relat.get(s);
-            assert!(val.is_some());
-            assert!(*val.unwrap() == 0);
+            assert!(deps.contains(s));
         }
+        assert!(!deps.contains("Bad"));
     }
 
     #[test]
-    fn medium_type_1() {
+    fn medium_type_deps_1() {
         let deps = get_type_deps(&parser::type_expr(
-            "A! B? ([A, B], C{A} -> C{B})"
-        ).unwrap(), HashSet::new()).unwrap();
-        assert!(deps.req_params == 1);
-        assert!(deps.relat.len() == 1);
+            "A! B? ([A, B], C{A} -> C{D})"
+        ).unwrap(), HashSet::new());
         for s in ["A", "B"].into_iter() {
-            let val = deps.relat.get(s);
-            assert!(val.is_none());
+            assert!(!deps.contains(s));
         }
-        let val = deps.relat.get("C");
-        assert!(*val.unwrap() == 0);
+        assert!(deps.contains("C"));
+        assert!(deps.contains("D"));
     }
 
     #[test]
-    fn medium_type_2() {
-        let deps = get_type_deps(&parser::type_expr(
-            "(A! A, (B! C! [B, C]){D})"
-        ).unwrap(), HashSet::new()).unwrap();
-        assert!(deps.req_params == 1);
-        assert!(deps.relat.len() == 0);
-        assert!(deps.exact.len() == 1);
-        for s in ["A", "B", "C"].into_iter() {
-            let val = deps.relat.get(s);
-            assert!(val.is_none());
-            let val = deps.exact.get(s);
-            assert!(val.is_none());
-        }
-        let val = deps.exact.get("D");
-        assert!(*val.unwrap() == 0);
+    fn basic_type_params_1() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "([A, B], C -> C)"
+            ).unwrap(),
+            &HashMap::from([("A".to_string(), 0), ("B".to_string(), 0), ("C".to_string(), 0)]),
+            HashSet::new()
+        ).unwrap() == 0);
+    }
+    #[test]
+    fn basic_type_params_2() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "(A! B, C)"
+            ).unwrap(),
+            &HashMap::from([("B".to_string(), 0), ("C".to_string(), 1)]),
+            HashSet::new()
+        ).unwrap() == 1);
     }
 
     #[test]
-    fn basic_type_fail_1() {
-        assert!(get_type_deps(&parser::type_expr(
-            "(A! B, C)"
-        ).unwrap(), HashSet::new()).is_err());
+    fn medium_type_params_1() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "A{B, C}"
+            ).unwrap(),
+            &HashMap::from([("A".to_string(), 2), ("B".to_string(), 3), ("C".to_string(), 0)]),
+            HashSet::new()
+        ).unwrap() == 3);
     }
 
     #[test]
-    fn basic_type_fail_2() {
-        assert!(get_type_deps(&parser::type_expr(
-            "(A, B{C! D})"
-        ).unwrap(), HashSet::new()).is_err());
+    fn medium_type_params_2() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "(A! A, (B! C! [B, C]){D})"
+            ).unwrap(),
+            &HashMap::from([("D".to_string(), 0)]),
+            HashSet::new()
+        ).unwrap() == 1);
     }
 
     #[test]
-    fn basic_type_fail_3() {
-        assert!(get_type_deps(&parser::type_expr(
-            "(){A}"
-        ).unwrap(), HashSet::new()).is_err());
+    fn basic_type_params_fail_1() {
+        assert!(matches!(get_type_params(
+            &parser::type_expr(
+                "(A! B, C)"
+            ).unwrap(),
+            &HashMap::from([("B".to_string(), 0), ("C".to_string(), 0)]),
+            HashSet::new()
+        ), Err(TypeError::InconsParams(_))));
     }
 
     #[test]
-    fn basic_type_fail_4() {
-        assert!(get_type_deps(&parser::type_expr(
-            "(Foo, ()){A}"
-        ).unwrap(), HashSet::new()).is_err());
-    }*/
+    fn basic_type_params_fail_2() {
+        assert!(matches!(get_type_params(
+            &parser::type_expr(
+                "(A, B{C! D})"
+            ).unwrap(),
+            &HashMap::from([("A".to_string(), 0), ("B".to_string(), 0), ("D".to_string(), 0)]),
+            HashSet::new()
+        ), Err(TypeError::TooManyParams)));
+    }
+
+    #[test]
+    fn basic_type_params_fail_3() {
+        assert!(matches!(get_type_params(
+            &parser::type_expr(
+                "(){A}"
+            ).unwrap(),
+            &HashMap::from([("A".to_string(), 0)]),
+            HashSet::new()
+        ), Err(TypeError::TooManyParams)));
+    }
+
+    #[test]
+    fn basic_type_params_fail_4() {
+        assert!(matches!(get_type_params(
+            &parser::type_expr(
+                "(Foo, ()){A}"
+            ).unwrap(),
+            &HashMap::from([("Foo".to_string(), 0), ("A".to_string(), 0)]),
+            HashSet::new()
+        ), Err(TypeError::TooManyParams)));
+    }
+
+    #[test]
+    fn basic_type_params_fail_5() {
+        assert!(matches!(get_type_params(
+            &parser::type_expr(
+                "[A, ()]"
+            ).unwrap(),
+            &HashMap::from([("A".to_string(), 1)]),
+            HashSet::new()
+        ), Err(TypeError::InconsParams(_))));
+    }
 
     #[test]
     fn basic_type_defs_1() {

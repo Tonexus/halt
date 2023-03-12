@@ -32,8 +32,8 @@ pub enum TypeError {
     #[error("Type {0} cannot be recursively defined.")]
     RecurDef(String),
     // TODO in which def
-    #[error("Type {name} has an inconsistent number of type parameters.")]
-    InconsistParams {name: String},
+    #[error("Type {0} has an inconsistent number of type parameters.")]
+    InconsParams(String),
     // TODO type name, in which def
     #[error("Type has too many parameters.")]
     TooManyParams,
