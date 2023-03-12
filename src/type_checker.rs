@@ -148,18 +148,18 @@ fn get_kword_type_params(type_name: &str) -> Option<usize> {
 
 // gets the number of type parameters for a type
 // assumes all input type parameters take no parameters themselves
-fn get_type_params(
+fn get_type_params<'a>(
     // target type expression
-    type_expr:  &TypeExpr,
+    type_expr:  &'a TypeExpr,
     // number of params for known types
     num_params: &HashMap<&str, usize>,
     // known local type variables
-    mut vars:   HashSet<String>,
+    mut vars:   HashSet<&'a str>,
 ) -> Result<usize, TypeError> {
     match type_expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, 0 params
-            if vars.contains(s) {
+            if vars.contains(s.as_str()) {
                 return Ok(0);
             }
             // not a locally-defined type var, look up params
@@ -182,7 +182,7 @@ fn get_type_params(
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            vars.insert(s.to_string());
+            vars.insert(s);
             return Ok(get_type_params(t, num_params, vars)? + 1);
         },
 
@@ -190,7 +190,7 @@ fn get_type_params(
         // TODO existential may have arbitrary number of type variables (for now assume not)
         // fix by allow option?
         TypeExpr::Existential(s, t) => {
-            vars.insert(s.to_string());
+            vars.insert(s);
             return get_type_params(t, num_params, vars);
         },
 
