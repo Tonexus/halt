@@ -63,7 +63,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
         types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (*s, get_type_deps(&t, HashSet::new())),
+            (*s, get_type_deps(t, HashSet::new())),
             (*s, dep_graph.add_node(s))
         ))
         .multiunzip();
@@ -71,7 +71,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
     // map of var to num params, set of undefined vars
     let (mut type_params, missing_vars): (HashMap<&str, usize>, HashSet<_>) = deps.iter()
         // merge all dependencies
-        .fold(HashSet::<&str>::new(), |mut a, (_, b)| {a.extend(b); return a})
+        .fold(HashSet::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
         // only get those that are undefined
         .filter(|s| !deps.contains_key(s))
@@ -103,7 +103,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
         if let Some(type_expr) = types.get(name) {
             type_params.insert(name, get_type_params(
-                &type_expr,
+                type_expr,
                 &type_params,
                 HashSet::new(),
             )?);
@@ -152,10 +152,10 @@ fn get_type_params<'a>(
     // target type expression
     type_expr:  &'a TypeExpr,
     // number of params for known types
-    num_params: &HashMap<&str, usize>,
+    num_params: &HashMap<&str, Option<usize>>,
     // known local type variables
     mut vars:   HashSet<&'a str>,
-) -> Result<usize, TypeError> {
+) -> Result<Option<usize>, TypeError> {
     match type_expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, 0 params
@@ -187,8 +187,6 @@ fn get_type_params<'a>(
         },
 
         // adds locally-defined type var
-        // TODO existential may have arbitrary number of type variables (for now assume not)
-        // fix by allow option?
         TypeExpr::Existential(s, t) => {
             vars.insert(s);
             return get_type_params(t, num_params, vars);
@@ -323,6 +321,7 @@ mod tests {
             HashSet::new()
         ).unwrap() == 0);
     }
+
     #[test]
     fn basic_type_params_2() {
         assert!(get_type_params(
@@ -332,6 +331,17 @@ mod tests {
             &HashMap::from([("B", 0), ("C", 1)]),
             HashSet::new()
         ).unwrap() == 1);
+    }
+
+    #[test]
+    fn basic_type_params_3() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "(A? A{C}, B)"
+            ).unwrap(),
+            &HashMap::from([("C", 0)]),
+            HashSet::new()
+        ).unwrap() == 0);
     }
 
     #[test]
@@ -354,6 +364,17 @@ mod tests {
             &HashMap::from([("D", 0)]),
             HashSet::new()
         ).unwrap() == 1);
+    }
+
+    #[test]
+    fn medium_type_params_3() {
+        assert!(get_type_params(
+            &parser::type_expr(
+                "(A! (A, A, A)){[B! C! ()]{D! E! F! ()}, D}"
+            ).unwrap(),
+            &HashMap::from([("D", 0)]),
+            HashSet::new()
+        ).unwrap() == 3);
     }
 
     #[test]
