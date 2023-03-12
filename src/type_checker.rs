@@ -56,30 +56,30 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
     // graph of type variable dependencies
-    let mut dep_graph: Graph<&String, _> = Graph::new();
+    let mut dep_graph: Graph<&str, _> = Graph::new();
 
     // map of var to dependencies, map of var to indices into graph
-    let (deps, node_idx): (HashMap<&String, _>, HashMap<&String, _>) =
+    let (deps, node_idx): (HashMap<&str, _>, HashMap<&str, _>) =
         types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (s, get_type_deps(&t, HashSet::new())),
-            (s, dep_graph.add_node(s))
+            (s.as_str(), get_type_deps(&t, HashSet::new())),
+            (s.as_str(), dep_graph.add_node(s))
         ))
         .multiunzip();
 
     // map of var to num params, set of undefined vars
-    let (mut type_params, missing_vars): (HashMap<String, usize>, HashSet<_>) = deps.iter()
+    let (mut type_params, missing_vars): (HashMap<&str, usize>, HashSet<_>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::<&str>::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
         // only get those that are undefined
-        .filter(|s| !deps.contains_key(&s.to_string()))
+        .filter(|s| !deps.contains_key(s))
         // split into keyword types (getting param count) and those that are not
         .partition_map(|s| {
-            match get_kword_type_params(&s.to_string()) {
-                Some(n) => Left((s.to_string(), n)),
-                None    => Right(s.to_string()),
+            match get_kword_type_params(s) {
+                Some(n) => Left((s, n)),
+                None    => Right(s),
             }
         });
 
@@ -90,19 +90,19 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
 
     // add dependency graph edges
     for (s1, s2) in deps.iter().flat_map(|(s, m)| iter::repeat(s).zip(m.iter())) {
-        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(&s2.to_string())) {
+        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(s2)) {
             dep_graph.add_edge(*k, *j, ());
         }
     }
 
     // get topological order, error if any recursive definitions
     let nodes = toposort(&dep_graph, None)
-        .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].clone()))?;
+        .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].to_string()))?;
 
     // get number of type parameters for each type
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
         if let Some(type_expr) = types.get(name) {
-            type_params.insert(name.to_string(), get_type_params(
+            type_params.insert(name, get_type_params(
                 &type_expr,
                 &type_params,
                 HashSet::new(),
@@ -113,10 +113,10 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
 }
 
 // get type params for keyword types that are numeric or otherwise special
-fn get_kword_type_params(type_name: &String) -> Option<usize> {
+fn get_kword_type_params(type_name: &str) -> Option<usize> {
     use lazy_static::lazy_static;
     use regex::{Regex, Captures};
-    match type_name.as_str() {
+    match type_name {
         // integer numerics
         "USize" => return Some(0),
         "U32"   => return Some(0),
@@ -152,7 +152,7 @@ fn get_type_params(
     // target type expression
     type_expr:  &TypeExpr,
     // number of params for known types
-    num_params: &HashMap<String, usize>,
+    num_params: &HashMap<&str, usize>,
     // known local type variables
     mut vars:   HashSet<String>,
 ) -> Result<usize, TypeError> {
@@ -163,7 +163,7 @@ fn get_type_params(
                 return Ok(0);
             }
             // not a locally-defined type var, look up params
-            return Ok(*num_params.get(s).ok_or(TypeError::DefaultErr)?);
+            return Ok(*num_params.get(s.as_str()).ok_or(TypeError::DefaultErr)?);
         },
 
         // check all parameters exactly
@@ -228,12 +228,12 @@ fn get_type_deps<'a>(
     // target type expression
     type_expr: &'a TypeExpr,
     // known local type variables
-    mut vars:  HashSet<&'a String>,
+    mut vars:  HashSet<&'a str>,
 ) -> HashSet<&'a str> {
     match type_expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
-            return if vars.contains(s) {
+            return if vars.contains(s.as_str()) {
                 HashSet::new()
             } else {
             // not a locally-defined type var, is a dependency
@@ -319,7 +319,7 @@ mod tests {
             &parser::type_expr(
                 "([A, B], C -> C)"
             ).unwrap(),
-            &HashMap::from([("A".to_string(), 0), ("B".to_string(), 0), ("C".to_string(), 0)]),
+            &HashMap::from([("A", 0), ("B", 0), ("C", 0)]),
             HashSet::new()
         ).unwrap() == 0);
     }
@@ -329,7 +329,7 @@ mod tests {
             &parser::type_expr(
                 "(A! B, C)"
             ).unwrap(),
-            &HashMap::from([("B".to_string(), 0), ("C".to_string(), 1)]),
+            &HashMap::from([("B", 0), ("C", 1)]),
             HashSet::new()
         ).unwrap() == 1);
     }
@@ -340,7 +340,7 @@ mod tests {
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
-            &HashMap::from([("A".to_string(), 2), ("B".to_string(), 3), ("C".to_string(), 0)]),
+            &HashMap::from([("A", 2), ("B", 3), ("C", 0)]),
             HashSet::new()
         ).unwrap() == 3);
     }
@@ -351,7 +351,7 @@ mod tests {
             &parser::type_expr(
                 "(A! A, (B! C! [B, C]){D})"
             ).unwrap(),
-            &HashMap::from([("D".to_string(), 0)]),
+            &HashMap::from([("D", 0)]),
             HashSet::new()
         ).unwrap() == 1);
     }
@@ -362,7 +362,7 @@ mod tests {
             &parser::type_expr(
                 "(A! B, C)"
             ).unwrap(),
-            &HashMap::from([("B".to_string(), 0), ("C".to_string(), 0)]),
+            &HashMap::from([("B", 0), ("C", 0)]),
             HashSet::new()
         ), Err(TypeError::InconsParams(_))));
     }
@@ -373,7 +373,7 @@ mod tests {
             &parser::type_expr(
                 "(A, B{C! D})"
             ).unwrap(),
-            &HashMap::from([("A".to_string(), 0), ("B".to_string(), 0), ("D".to_string(), 0)]),
+            &HashMap::from([("A", 0), ("B", 0), ("D", 0)]),
             HashSet::new()
         ), Err(TypeError::TooManyParams)));
     }
@@ -384,7 +384,7 @@ mod tests {
             &parser::type_expr(
                 "(){A}"
             ).unwrap(),
-            &HashMap::from([("A".to_string(), 0)]),
+            &HashMap::from([("A", 0)]),
             HashSet::new()
         ), Err(TypeError::TooManyParams)));
     }
@@ -395,7 +395,7 @@ mod tests {
             &parser::type_expr(
                 "(Foo, ()){A}"
             ).unwrap(),
-            &HashMap::from([("Foo".to_string(), 0), ("A".to_string(), 0)]),
+            &HashMap::from([("Foo", 0), ("A", 0)]),
             HashSet::new()
         ), Err(TypeError::TooManyParams)));
     }
@@ -406,7 +406,7 @@ mod tests {
             &parser::type_expr(
                 "[A, ()]"
             ).unwrap(),
-            &HashMap::from([("A".to_string(), 1)]),
+            &HashMap::from([("A", 1)]),
             HashSet::new()
         ), Err(TypeError::InconsParams(_))));
     }
