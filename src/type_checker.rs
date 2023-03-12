@@ -22,17 +22,6 @@ struct Context {
 //    }
 //}
 
-// indicates which types this type depends on and their possible number of
-// type parameters
-struct TypeDepParams {
-    // dependencies for which the relative number of type parameters is known
-    relat:      HashMap<String, i32>,
-    // dependencies for which the exact number of type parameters is known
-    exact:      HashMap<String, i32>,
-    // minimum number of parameters to complete this type
-    req_params: i32,
-}
-
 /*
 fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(), &'static str> {
     Ok(())
@@ -66,18 +55,19 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
-    let mut deps: HashMap<String, HashSet<String>> = HashMap::new();
+    // graph of type variable dependencies
     let mut dep_graph: Graph<&String, ()> = Graph::new();
-    let mut node_idx = HashMap::new();
 
-    // for each type var get dependencies
-    for (name, type_expr) in types.iter() {
-        deps.insert(name.to_string(), get_type_deps(&type_expr, HashSet::new()));
-        // also insert nodes into dependency graph
-        node_idx.insert(name, dep_graph.add_node(name));
-    }
+    // map of all of a variable's dependencies and map of indices into graph
+    let (deps, node_idx): (HashMap<String, _>, HashMap<_, _>) = types.iter()
+        // get dependencies for each type var and add nodes to graph
+        .map(|(s, t)| (
+            (s.to_string(), get_type_deps(&t, HashSet::new())),
+            (s, dep_graph.add_node(s))
+        ))
+        .multiunzip();
 
-    let (mut type_params, missing_vars): (HashMap<String, usize>, HashSet<&String>) = deps.iter()
+    let (mut type_params, missing_vars): (HashMap<String, _>, HashSet<&String>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::<&String>::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
