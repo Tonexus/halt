@@ -29,22 +29,22 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 */
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
-    let mut types: HashMap<String, TypeExpr> = misc::get_basic_kword_type_exprs();
-    let mut consts: HashMap<String, (Option<TypeExpr>, ValueExpr)> = HashMap::new();
+    let mut types: HashMap<&str, &TypeExpr> = HashMap::new();// = misc::get_basic_kword_type_exprs();
+    let mut consts: HashMap<&str, (&Option<TypeExpr>, &ValueExpr)> = HashMap::new();
     // split types, building initial context
-    for def in defs.into_iter() {
+    for def in defs.iter() {
         match def {
             Definition::Type(t) => {
-                if types.contains_key(&t.name) {
-                    return Err(TypeError::MultiDef(t.name).into());
+                if types.contains_key(t.name.as_str()) {
+                    return Err(TypeError::MultiDef(t.name.clone()).into());
                 }
-                types.insert(t.name.clone(), t.expr);
+                types.insert(t.name.as_str(), &t.expr);
             }
             Definition::Const(c) => {
-                if consts.contains_key(&c.name) {
-                    return Err(ValueError::MultiDef(c.name).into());
+                if consts.contains_key(c.name.as_str()) {
+                    return Err(ValueError::MultiDef(c.name.clone()).into());
                 }
-                consts.insert(c.name, (c.type_expr, c.expr));
+                consts.insert(c.name.as_str(), (&c.type_expr, &c.expr));
             }
         }
     }
@@ -54,7 +54,7 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 }
 
 // TODO add context param if validating locally defined types
-fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
+fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError> {
     // graph of type variable dependencies
     let mut dep_graph: Graph<&str, _> = Graph::new();
 
@@ -63,8 +63,8 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
         types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (s.as_str(), get_type_deps(&t, HashSet::new())),
-            (s.as_str(), dep_graph.add_node(s))
+            (*s, get_type_deps(&t, HashSet::new())),
+            (*s, dep_graph.add_node(s))
         ))
         .multiunzip();
 
