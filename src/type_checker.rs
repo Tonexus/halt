@@ -56,18 +56,20 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
     // graph of type variable dependencies
-    let mut dep_graph: Graph<&String, ()> = Graph::new();
+    let mut dep_graph: Graph<&String, _> = Graph::new();
 
-    // map of all of a variable's dependencies and map of indices into graph
-    let (deps, node_idx): (HashMap<String, _>, HashMap<_, _>) = types.iter()
+    // map of var to dependencies, map of var to indices into graph
+    let (deps, node_idx): (HashMap<&String, _>, HashMap<&String, _>) =
+        types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (s.to_string(), get_type_deps(&t, HashSet::new())),
+            (s, get_type_deps(&t, HashSet::new())),
             (s, dep_graph.add_node(s))
         ))
         .multiunzip();
 
-    let (mut type_params, missing_vars): (HashMap<String, _>, HashSet<&String>) = deps.iter()
+    // map of var to num params, set of undefined vars
+    let (mut type_params, missing_vars): (HashMap<String, usize>, HashSet<_>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::<&String>::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
@@ -222,11 +224,11 @@ fn get_type_params(
 }
 
 // gets the type variable dependencies
-fn get_type_deps(
+fn get_type_deps<'a>(
     // target type expression
-    type_expr: &TypeExpr,
+    type_expr: &'a TypeExpr,
     // known local type variables
-    mut vars:  HashSet<String>,
+    mut vars:  HashSet<&'a String>,
 ) -> HashSet<String> {
     match type_expr {
         TypeExpr::Variable(s) => {
@@ -250,13 +252,13 @@ fn get_type_deps(
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            vars.insert(s.to_string());
+            vars.insert(s);
             return get_type_deps(t, vars);
         },
 
         // adds locally-defined type var
         TypeExpr::Existential(s, t) => {
-            vars.insert(s.to_string());
+            vars.insert(s);
             return get_type_deps(t, vars);
         },
 
