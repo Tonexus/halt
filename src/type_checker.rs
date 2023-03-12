@@ -69,7 +69,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
         .multiunzip();
 
     // map of var to num params, set of undefined vars
-    let (mut type_params, missing_vars): (HashMap<&str, usize>, HashSet<_>) = deps.iter()
+    let (mut type_params, missing_vars): (HashMap<&str, Option<usize>>, HashSet<_>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
@@ -78,7 +78,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
         // split into keyword types (getting param count) and those that are not
         .partition_map(|s| {
             match get_kword_type_params(s) {
-                Some(n) => Left((s, n)),
+                Some(n) => Left((s, Some(n))),
                 None    => Right(s),
             }
         });
@@ -105,6 +105,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
             type_params.insert(name, get_type_params(
                 type_expr,
                 &type_params,
+                HashSet::new(),
                 HashSet::new(),
             )?);
         }
@@ -153,14 +154,20 @@ fn get_type_params<'a>(
     type_expr:  &'a TypeExpr,
     // number of params for known types
     num_params: &HashMap<&str, Option<usize>>,
-    // known local type variables
-    mut vars:   HashSet<&'a str>,
+    // known universal type variables
+    mut univ:   HashSet<&'a str>,
+    // known existential type variables
+    mut exis:   HashSet<&'a str>,
 ) -> Result<Option<usize>, TypeError> {
     match type_expr {
         TypeExpr::Variable(s) => {
-            // is a locally-defined type var, 0 params
-            if vars.contains(s.as_str()) {
-                return Ok(0);
+            // is a locally-defined universal type var, 0 params
+            if univ.contains(s.as_str()) {
+                return Ok(Some(0));
+            }
+            // is a locally-defined existential type var, arbitrary params
+            if exis.contains(s.as_str()) {
+                return Ok(None);
             }
             // not a locally-defined type var, look up params
             return Ok(*num_params.get(s.as_str()).ok_or(TypeError::DefaultErr)?);
@@ -168,55 +175,70 @@ fn get_type_params<'a>(
 
         // check all parameters exactly
         TypeExpr::TypeParams(t, l) => {
-            let mut acc = get_type_params(t, num_params, vars.clone())?;
+            let mut acc = get_type_params(t, num_params, univ.clone(), exis.clone())?;
             for t in l.into_iter() {
                 // has no more slots for params
-                if acc == 0 {
+                if let Some(0) = acc {
                     return Err(TypeError::TooManyParams);
                 }
-                // loses 1 slot per param, but might be a param that is itself generic
-                acc = acc - 1 + get_type_params(t, num_params, vars.clone())?;
+                // loses 1 slot per param, but might be a param that itself has params
+                acc = get_type_params(
+                    t,
+                    num_params,
+                    univ.clone(),
+                    exis.clone(),
+                )?.and_then(|n| acc.map(|m| n + m - 1));
             }
             return Ok(acc);
         },
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            vars.insert(s);
-            return Ok(get_type_params(t, num_params, vars)? + 1);
+            univ.insert(s);
+            return Ok(get_type_params(t, num_params, univ, exis)?.map(|n| n + 1));
         },
 
         // adds locally-defined type var
         TypeExpr::Existential(s, t) => {
-            vars.insert(s);
-            return get_type_params(t, num_params, vars);
+            exis.insert(s);
+            return get_type_params(t, num_params, univ, exis);
         },
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
             if l.len() == 0 {
-                return Ok(0);
+                return Ok(Some(0));
             }
-            let mut one = HashSet::new();
+            let mut out = None;
             for (_, t) in l.into_iter() {
-                one.insert(get_type_params(t, num_params, vars.clone())?);
+                let o = get_type_params(t, num_params, univ.clone(), exis.clone())?;
+                // param count must be same across branches or none
+                match (out, o) {
+                    (Some(n), Some(m)) if n != m => {
+                        return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
+                    },
+                    (None, Some(_)) => {
+                        out = o;
+                    },
+                    _ => {},
+                }
             }
-            // param count must be same across branches
-            return one
-                .into_iter()
-                .exactly_one()
-                .map_err(|_| TypeError::InconsParams("Bob".to_string())); // TODO fix
+            return Ok(out);
         },
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Function(t1, t2) => {
-            let n = get_type_params(t1, num_params, vars.clone())?;
-            let m = get_type_params(t2, num_params, vars)?;
-            // number of used params must be same across branches
-            if n != m {
-                return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
+            let o1 = get_type_params(t1, num_params, univ.clone(), exis.clone())?;
+            let o2 = get_type_params(t2, num_params, univ, exis)?;
+            // param count must be same across branches or none
+            match (o1, o2) {
+                (Some(n), Some(m)) if n != m => {
+                    return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
+                },
+                _ => {
+                    return Ok(o1.or(o2))
+                },
             }
-            return Ok(n);
         },
     }
 }
@@ -317,9 +339,10 @@ mod tests {
             &parser::type_expr(
                 "([A, B], C -> C)"
             ).unwrap(),
-            &HashMap::from([("A", 0), ("B", 0), ("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 0);
+            &HashMap::from([("A", Some(0)), ("B", Some(0)), ("C", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 0);
     }
 
     #[test]
@@ -328,9 +351,10 @@ mod tests {
             &parser::type_expr(
                 "(A! B, C)"
             ).unwrap(),
-            &HashMap::from([("B", 0), ("C", 1)]),
-            HashSet::new()
-        ).unwrap() == 1);
+            &HashMap::from([("B", Some(0)), ("C", Some(1))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 1);
     }
 
     #[test]
@@ -339,9 +363,10 @@ mod tests {
             &parser::type_expr(
                 "(A? A{C}, B)"
             ).unwrap(),
-            &HashMap::from([("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 0);
+            &HashMap::from([("B", Some(0)), ("C", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 0);
     }
 
     #[test]
@@ -350,9 +375,10 @@ mod tests {
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
-            &HashMap::from([("A", 2), ("B", 3), ("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 3);
+            &HashMap::from([("A", Some(2)), ("B", Some(3)), ("C", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 3);
     }
 
     #[test]
@@ -361,9 +387,10 @@ mod tests {
             &parser::type_expr(
                 "(A! A, (B! C! [B, C]){D})"
             ).unwrap(),
-            &HashMap::from([("D", 0)]),
-            HashSet::new()
-        ).unwrap() == 1);
+            &HashMap::from([("D", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 1);
     }
 
     #[test]
@@ -372,9 +399,10 @@ mod tests {
             &parser::type_expr(
                 "(A! (A, A, A)){[B! C! ()]{D! E! F! ()}, D}"
             ).unwrap(),
-            &HashMap::from([("D", 0)]),
-            HashSet::new()
-        ).unwrap() == 3);
+            &HashMap::from([("D", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
+        ).unwrap().unwrap() == 3);
     }
 
     #[test]
@@ -383,8 +411,9 @@ mod tests {
             &parser::type_expr(
                 "(A! B, C)"
             ).unwrap(),
-            &HashMap::from([("B", 0), ("C", 0)]),
-            HashSet::new()
+            &HashMap::from([("B", Some(0)), ("C", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
         ), Err(TypeError::InconsParams(_))));
     }
 
@@ -394,8 +423,9 @@ mod tests {
             &parser::type_expr(
                 "(A, B{C! D})"
             ).unwrap(),
-            &HashMap::from([("A", 0), ("B", 0), ("D", 0)]),
-            HashSet::new()
+            &HashMap::from([("A", Some(0)), ("B", Some(0)), ("D", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
         ), Err(TypeError::TooManyParams)));
     }
 
@@ -405,8 +435,9 @@ mod tests {
             &parser::type_expr(
                 "(){A}"
             ).unwrap(),
-            &HashMap::from([("A", 0)]),
-            HashSet::new()
+            &HashMap::from([("A", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
         ), Err(TypeError::TooManyParams)));
     }
 
@@ -416,8 +447,9 @@ mod tests {
             &parser::type_expr(
                 "(Foo, ()){A}"
             ).unwrap(),
-            &HashMap::from([("Foo", 0), ("A", 0)]),
-            HashSet::new()
+            &HashMap::from([("Foo", Some(0)), ("A", Some(0))]),
+            HashSet::new(),
+            HashSet::new(),
         ), Err(TypeError::TooManyParams)));
     }
 
@@ -427,8 +459,9 @@ mod tests {
             &parser::type_expr(
                 "[A, ()]"
             ).unwrap(),
-            &HashMap::from([("A", 1)]),
-            HashSet::new()
+            &HashMap::from([("A", Some(1))]),
+            HashSet::new(),
+            HashSet::new(),
         ), Err(TypeError::InconsParams(_))));
     }
 
