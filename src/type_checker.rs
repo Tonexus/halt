@@ -213,14 +213,10 @@ fn get_type_params<'a>(
             for (_, t) in l.into_iter() {
                 let o = get_type_params(t, num_params, univ.clone(), exis.clone())?;
                 // param count must be same across branches or none
-                match (out, o) {
-                    (Some(n), Some(m)) if n != m => {
-                        return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
-                    },
-                    (None, Some(_)) => {
-                        out = o;
-                    },
-                    _ => {},
+                if out != o {
+                    out = out.xor(o);
+                    // only get here if both are some and are not equal
+                    out.ok_or(TypeError::InconsParams("Bob".to_string()))?; // TODO fix
                 }
             }
             return Ok(out);
@@ -228,17 +224,15 @@ fn get_type_params<'a>(
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Function(t1, t2) => {
-            let o1 = get_type_params(t1, num_params, univ.clone(), exis.clone())?;
-            let o2 = get_type_params(t2, num_params, univ, exis)?;
+            let o = get_type_params(t1, num_params, univ.clone(), exis.clone())?;
+            let mut out = get_type_params(t2, num_params, univ, exis)?;
             // param count must be same across branches or none
-            match (o1, o2) {
-                (Some(n), Some(m)) if n != m => {
-                    return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
-                },
-                _ => {
-                    return Ok(o1.or(o2))
-                },
+            if out != o {
+                out = out.xor(o);
+                // only get here if both are some and are not equal
+                out.ok_or(TypeError::InconsParams("Bob".to_string()))?; // TODO fix
             }
+            return Ok(out);
         },
     }
 }
