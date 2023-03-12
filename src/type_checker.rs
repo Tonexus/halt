@@ -2,7 +2,7 @@
 
 use std::{iter, collections::{HashSet, HashMap}};
 
-use itertools::Itertools;
+use itertools::{Itertools, Either::{Left, Right}};
 use petgraph::{Graph, algo::toposort};
 
 use super::ast::*;
@@ -66,67 +66,57 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
-    let mut all_deps: HashMap<String, TypeDepParams> = HashMap::new();
-    let mut dep_graph: Graph<String, i32> = Graph::new();
+    let mut deps: HashMap<String, HashSet<String>> = HashMap::new();
+    let mut dep_graph: Graph<String, ()> = Graph::new();
     let mut node_idx = HashMap::new();
 
-    // for each type var get dependencies and possible number of params
+    // for each type var get dependencies
     for (name, type_expr) in types.iter() {
-        all_deps.insert(name.to_string(), get_type_deps(&type_expr, 0, HashSet::new()).map_err(|_| TypeError::DefaultErr)?);
+        deps.insert(name.to_string(), get_type_deps(&type_expr, HashSet::new()));
         // also insert nodes into dependency graph
         node_idx.insert(name.to_string(), dep_graph.add_node(name.to_string()));
     }
 
-    // get all dependencies that aren't defined and get exact number params
-    let mut exact_params: HashMap<String, i32> = HashMap::new();
-    let mut missing_vars: HashSet<String> = HashSet::new();
-    for (_, deps) in all_deps.iter() {
-        for (dep_name, _) in deps.relat.iter() {
-            // insert missing into set
-            if all_deps.get(dep_name).is_none() {
-                missing_vars.insert(dep_name.to_string());
+    let (type_params, missing_vars): (HashMap<String, usize>, HashSet<&String>) = deps.iter()
+        // merge all dependencies
+        .fold(HashSet::<&String>::new(), |mut a, (_, b)| {a.extend(b); return a})
+        .into_iter()
+        // only get those that are undefined
+        .filter(|s| !deps.contains_key(*s))
+        // split into keyword types (getting param count) and those that are not
+        .partition_map(|s| {
+            match get_kword_type_params(s) {
+                Some(n) => Left((s.clone(), n)),
+                None    => Right(s),
             }
-        }
-        for (dep_name, m) in deps.exact.iter() {
-            // insert missing into set
-            if all_deps.get(dep_name).is_none() {
-                missing_vars.insert(dep_name.to_string());
-            }
-            // merge exact, making sure params count for same type variable is same
-            match exact_params.insert(dep_name.to_string(), *m) {
-                Some(n) if n != *m => {
-                    return Err(TypeError::InconsistParams {name: dep_name.to_string()});
-                },
-                _ => {},
-            }
-        }
-    }
+        });
 
-    // check if any dependencies missing
-    for var_name in missing_vars.into_iter() {
-        if let Some(n) = get_kword_type_params(&var_name) {
-            exact_params.insert(var_name, n);
-        } else {
-            return Err(TypeError::Undef(var_name));
-        }
+    // if any remaining non-keyword types, fail
+    if let Some(name) = missing_vars.iter().next() {
+        return Err(TypeError::Undef(name.to_string()));
     }
 
     // add dependency graph edges
-    for (s1, (s2, n)) in all_deps.into_iter()
-        .flat_map(|(s, m)| iter::repeat(s).zip(m.relat.into_iter())) {
-        node_idx.get(&s1)
-            .zip(node_idx.get(&s2))
-            .map(|(j, k)| dep_graph.add_edge(*j, *k, n));
+    for (s1, s2) in deps.iter().flat_map(|(s, m)| iter::repeat(s).zip(m.iter())) {
+        match (node_idx.get(s1), node_idx.get(s2)) {
+            (Some(j), Some(k)) => {dep_graph.add_edge(*j, *k, ());},
+            _ => {},
+        }
     }
 
-    // get topological order
+    // get topological order, error if any recursive definitions
     let nodes = toposort(&dep_graph, None)
         .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].clone()))?;
+
+    // get number of type parameters for each type
+    /*for name in nodes.into_iter().map(|x| dep_graph[x]) {
+        types.get(name).map(get_num_params(name, ))
+    }*/
     return Ok(());
 }
 
 // get type params for keyword types that are numeric or otherwise special
-fn get_kword_type_params(type_name: &String) -> Option<i32> {
+fn get_kword_type_params(type_name: &String) -> Option<usize> {
     use lazy_static::lazy_static;
     use regex::{Regex, Captures};
     match type_name.as_str() {
@@ -159,6 +149,7 @@ fn get_kword_type_params(type_name: &String) -> Option<i32> {
     return None;
 }
 
+/*
 // gets the type variable dependencies and type parameter information
 fn get_type_deps(
     // type expression to parse
@@ -293,17 +284,78 @@ fn get_type_deps(
         },
     }
 }
+*/
+
+// gets the type variable dependencies
+fn get_type_deps(
+    // type expression to parse
+    expr:       &TypeExpr,
+    // context of defined type variables
+    mut ctxt:   HashSet<String>,
+) -> HashSet<String> {
+    match expr {
+        TypeExpr::Variable(s) => {
+            // is a locally-defined type var, not a dependency
+            return if ctxt.contains(s) {
+                HashSet::new()
+            } else {
+            // not a locally-defined type var, is a dependency
+                HashSet::from([s.to_string()])
+            };
+        },
+
+        // check all parameters exactly
+        TypeExpr::TypeParams(t, l) => {
+            let mut out = get_type_deps(t, ctxt.clone());
+            for type_expr in l.into_iter() {
+                out.extend(get_type_deps(type_expr, ctxt.clone()));
+            }
+            return out;
+        },
+
+        // adds locally-defined type var from parameter
+        TypeExpr::Universal(s, t) => {
+            ctxt.insert(s.to_string());
+            return get_type_deps(t, ctxt);
+        },
+
+        // adds locally-defined type var
+        TypeExpr::Existential(s, t) => {
+            ctxt.insert(s.to_string());
+            return get_type_deps(t, ctxt);
+        },
+
+        // must check all subtrees
+        TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
+            if l.len() == 0 {
+                return HashSet::new();
+            }
+            let mut out = HashSet::new();
+            for (_, t) in l.into_iter() {
+                out.extend(get_type_deps(t, ctxt.clone()));
+            }
+            return out;
+        },
+
+        // must check all subtrees
+        TypeExpr::Function(t1, t2) => {
+            let mut out = get_type_deps(t1, ctxt.clone());
+            out.extend(get_type_deps(t2, ctxt));
+            return out;
+        },
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use super::super::parser;
 
-    #[test]
-    fn basic_type() {
+   /* #[test]
+    fn basic_type_1() {
         let deps = get_type_deps(&parser::type_expr(
             "([A, B], C -> C)"
-        ).unwrap(), 0, HashSet::new()).unwrap();
+        ).unwrap(), HashSet::new()).unwrap();
         assert!(deps.req_params == 0);
         for s in ["A", "B", "C"].into_iter() {
             let val = deps.relat.get(s);
@@ -313,10 +365,10 @@ mod tests {
     }
 
     #[test]
-    fn medium_type() {
+    fn medium_type_1() {
         let deps = get_type_deps(&parser::type_expr(
             "A! B? ([A, B], C{A} -> C{B})"
-        ).unwrap(), 0, HashSet::new()).unwrap();
+        ).unwrap(), HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
         assert!(deps.relat.len() == 1);
         for s in ["A", "B"].into_iter() {
@@ -325,10 +377,13 @@ mod tests {
         }
         let val = deps.relat.get("C");
         assert!(*val.unwrap() == 0);
+    }
 
+    #[test]
+    fn medium_type_2() {
         let deps = get_type_deps(&parser::type_expr(
             "(A! A, (B! C! [B, C]){D})"
-        ).unwrap(), 0, HashSet::new()).unwrap();
+        ).unwrap(), HashSet::new()).unwrap();
         assert!(deps.req_params == 1);
         assert!(deps.relat.len() == 0);
         assert!(deps.exact.len() == 1);
@@ -343,13 +398,80 @@ mod tests {
     }
 
     #[test]
-    fn basic_type_fail() {
+    fn basic_type_fail_1() {
         assert!(get_type_deps(&parser::type_expr(
             "(A! B, C)"
-        ).unwrap(), 0, HashSet::new()).is_err());
+        ).unwrap(), HashSet::new()).is_err());
+    }
+
+    #[test]
+    fn basic_type_fail_2() {
         assert!(get_type_deps(&parser::type_expr(
             "(A, B{C! D})"
-        ).unwrap(), 0, HashSet::new()).is_err());
+        ).unwrap(), HashSet::new()).is_err());
+    }
+
+    #[test]
+    fn basic_type_fail_3() {
+        assert!(get_type_deps(&parser::type_expr(
+            "(){A}"
+        ).unwrap(), HashSet::new()).is_err());
+    }
+
+    #[test]
+    fn basic_type_fail_4() {
+        assert!(get_type_deps(&parser::type_expr(
+            "(Foo, ()){A}"
+        ).unwrap(), HashSet::new()).is_err());
+    }*/
+
+    #[test]
+    fn basic_type_defs_1() {
+        assert!(check_defs(parser::defs(
+            "Foo := U32;"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn basic_type_defs_2() {
+        assert!(check_defs(parser::defs(
+            "Foo := U32; Bar := Foo;"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn basic_type_defs_3() {
+        assert!(check_defs(parser::defs(
+            "Foo := Arr{Bar, N47}; Bar := Arr{(N1, USize), N13};"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn medium_type_defs_1() {
+        assert!(check_defs(parser::defs(
+            "Foo := A! Bar{A}; Bar := B! C! [B, C]; Baz := Foo{U32};"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn basic_type_defs_fail_1() {
+        assert!(check_defs(parser::defs(
+            "Foo := Foo;"
+        ).unwrap()).is_err());
+    }
+
+    #[test]
+    fn basic_type_defs_fail_2() {
+        assert!(check_defs(parser::defs(
+            "Foo := Bar; Bar := Foo;"
+        ).unwrap()).is_err());
+    }
+
+    #[test]
+    fn basic_type_defs_fail_3() {
+        assert!(check_defs(parser::defs(
+            "Foo := U32{U16};"
+        ).unwrap()).is_err());
     }
 }
 

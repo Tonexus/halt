@@ -617,7 +617,7 @@ peg::parser!{
 mod tests {
     use super::*;
     #[test]
-    fn basic_type_def() {
+    fn basic_type_def_1() {
         assert_eq!(defs("Foo := Int;"), Ok(
             Vec::from([Definition::Type(TypeDef{
                 name: "Foo".to_string(),
@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn medium_type_def() {
+    fn medium_type_def_1() {
         assert_eq!(defs("Foo := A! (A, [int: Int, float: Float]);"), Ok(
             Vec::from([Definition::Type(TypeDef{
                 name: "Foo".to_string(),
@@ -646,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_const_def() {
+    fn basic_const_def_1() {
         assert_eq!(defs("foo := bar + false;"), Ok(
             Vec::from([Definition::Const(ConstDef{
                 name:        "foo".to_string(),
@@ -670,12 +670,12 @@ mod tests {
     }
 
     #[test]
-    fn basic_def_fail() {
+    fn basic_def_fail_1() {
         assert!(defs("fL%u").is_err())
     }
 
     #[test]
-    fn basic_type_expr() {
+    fn basic_type_expr_1() {
         assert_eq!(type_expr("A! Foo{A}"), Ok(
             TypeExpr::Universal("A".to_string(), Box::new(
                 TypeExpr::TypeParams(
@@ -687,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_value_expr() {
+    fn basic_value_expr_1() {
         assert_eq!(value_expr("[some = 1 + 1]"), Ok(
             ValueExpr {
                 variant:   ExprVariant::Sum(
@@ -700,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_value_expr_order() {
+    fn basic_value_expr_order_1() {
         // parenthesize as (foo())$
         assert_eq!(value_expr("foo()$"), Ok(
             ValueExpr {
@@ -711,7 +711,10 @@ mod tests {
                 type_expr: None,
             }
         ));
+    }
 
+    #[test]
+    fn basic_value_expr_order_2() {
         // parenthesize as (a * b) - c
         assert_eq!(value_expr("a * b - c"), Ok(
             ValueExpr {
@@ -723,7 +726,10 @@ mod tests {
                 type_expr: None,
             }
         ));
+    }
 
+    #[test]
+    fn basic_value_expr_order_3() {
         // parenthesize as (foo(a)) * (bar(b))
         assert_eq!(value_expr("foo(a) * bar(b)"), Ok(
             ValueExpr {
