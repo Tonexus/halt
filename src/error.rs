@@ -35,8 +35,8 @@ pub enum TypeError {
     #[error("Type {name} has an inconsistent number of type parameters.")]
     InconsistParams {name: String},
     // TODO type name, in which def
-    #[error("Type cannot have type parameters.")]
-    CannotHaveParams,
+    #[error("Type has too many parameters.")]
+    TooManyParams,
     #[error("You are bad and should feel bad.")]
     DefaultErr,
 }

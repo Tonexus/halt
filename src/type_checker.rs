@@ -67,17 +67,17 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError> {
     let mut deps: HashMap<String, HashSet<String>> = HashMap::new();
-    let mut dep_graph: Graph<String, ()> = Graph::new();
+    let mut dep_graph: Graph<&String, ()> = Graph::new();
     let mut node_idx = HashMap::new();
 
     // for each type var get dependencies
     for (name, type_expr) in types.iter() {
         deps.insert(name.to_string(), get_type_deps(&type_expr, HashSet::new()));
         // also insert nodes into dependency graph
-        node_idx.insert(name.to_string(), dep_graph.add_node(name.to_string()));
+        node_idx.insert(name, dep_graph.add_node(name));
     }
 
-    let (type_params, missing_vars): (HashMap<String, usize>, HashSet<&String>) = deps.iter()
+    let (mut type_params, missing_vars): (HashMap<String, usize>, HashSet<&String>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::<&String>::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
@@ -98,9 +98,8 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
 
     // add dependency graph edges
     for (s1, s2) in deps.iter().flat_map(|(s, m)| iter::repeat(s).zip(m.iter())) {
-        match (node_idx.get(s1), node_idx.get(s2)) {
-            (Some(j), Some(k)) => {dep_graph.add_edge(*j, *k, ());},
-            _ => {},
+        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(s2)) {
+            dep_graph.add_edge(*k, *j, ());
         }
     }
 
@@ -109,9 +108,15 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
         .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].clone()))?;
 
     // get number of type parameters for each type
-    /*for name in nodes.into_iter().map(|x| dep_graph[x]) {
-        types.get(name).map(get_num_params(name, ))
-    }*/
+    for name in nodes.into_iter().map(|x| dep_graph[x]) {
+        if let Some(type_expr) = types.get(name) {
+            type_params.insert(name.to_string(), get_type_params(
+                &type_expr,
+                &type_params,
+                HashSet::new(),
+            )?);
+        }
+    }
     return Ok(());
 }
 
@@ -149,154 +154,94 @@ fn get_kword_type_params(type_name: &String) -> Option<usize> {
     return None;
 }
 
-/*
-// gets the type variable dependencies and type parameter information
-fn get_type_deps(
-    // type expression to parse
-    expr:       &TypeExpr,
-    // the net number of parameters required at this depth
-    net_params: i32,
-    // context of defined type variables
-    mut ctxt:   HashSet<String>,
-) -> Result<TypeDepParams, TypeError> {
-    // helper function to merge two dependency sets
-    fn merge(
-        one: &mut HashMap<String, i32>,
-        two: HashMap<String, i32>
-    ) -> Result<(), TypeError> {
-        for (name, m) in two.into_iter() {
-            // make sure params count for same type variable is same
-            match one.insert(name.clone(), m) {
-                Some(n) if n != m => {
-                    return Err(TypeError::InconsistParams {name: name});
-                },
-                _ => {},
-            }
-        }
-        return Ok(());
-    }
-
-    match expr {
+// gets the number of type parameters for a type
+// assumes all input type parameters take no parameters themselves
+fn get_type_params(
+    // target type expression
+    type_expr:  &TypeExpr,
+    // number of params for known types
+    num_params: &HashMap<String, usize>,
+    // known local type variables
+    mut vars:   HashSet<String>,
+) -> Result<usize, TypeError> {
+    match type_expr {
         TypeExpr::Variable(s) => {
-            // is a locally-defined type var, not a dependency
-            if ctxt.contains(s) {
-                return Ok(TypeDepParams {
-                    relat:      HashMap::new(),
-                    exact:      HashMap::new(),
-                    req_params: net_params,
-                });
+            // is a locally-defined type var, 0 params
+            if vars.contains(s) {
+                return Ok(0);
             }
-            // not a locally-defined type var, is a dependency
-            return Ok(TypeDepParams {
-                relat:      HashMap::from([(s.to_string(), net_params)]),
-                exact:      HashMap::new(),
-                req_params: net_params,
-            });
+            // not a locally-defined type var, look up params
+            return Ok(*num_params.get(s).ok_or(TypeError::DefaultErr)?);
         },
 
         // check all parameters exactly
         TypeExpr::TypeParams(t, l) => {
-            let mut out = get_type_deps(t, net_params - l.len() as i32, ctxt.clone())?;
-            out.req_params = i32::max(out.req_params, net_params - l.len() as i32);
-            for type_expr in l.into_iter() {
-                let deps = get_type_deps(type_expr, 0, ctxt.clone())?;
-                // TODO allowed?
-                /*if deps.req_params > 0 {
-                    return Err("Cannot supply type parameters to type parameter");
-                }*/
-                // combine dependency sets, BOTH into exact, since can take no params
-                merge(&mut out.exact, deps.relat)?;
-                merge(&mut out.exact, deps.exact)?;
+            let mut acc = get_type_params(t, num_params, vars.clone())?;
+            for t in l.into_iter() {
+                // has no more slots for params
+                if acc == 0 {
+                    return Err(TypeError::TooManyParams);
+                }
+                // loses 1 slot per param, but might be a param that is itself generic
+                acc = acc - 1 + get_type_params(t, num_params, vars.clone())?;
             }
-            return Ok(out);
+            return Ok(acc);
         },
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            ctxt.insert(s.to_string());
-            let mut out = get_type_deps(t, net_params + 1, ctxt)?;
-            out.req_params = i32::max(out.req_params, net_params + 1);
-            return Ok(out);
+            vars.insert(s.to_string());
+            return Ok(get_type_params(t, num_params, vars)? + 1);
         },
 
         // adds locally-defined type var
         // TODO existential may have arbitrary number of type variables (for now assume not)
+        // fix by allow option?
         TypeExpr::Existential(s, t) => {
-            ctxt.insert(s.to_string());
-            let mut out = get_type_deps(t, net_params, ctxt)?;
-            out.req_params = i32::max(out.req_params, net_params);
-            return Ok(out);
+            vars.insert(s.to_string());
+            return get_type_params(t, num_params, vars);
         },
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
             if l.len() == 0 {
-                // empty type cannot have any type parameters
-                if net_params < 0 {
-                    return Err(TypeError::CannotHaveParams);
-                }
-                return Ok(TypeDepParams {
-                    relat:       HashMap::new(),
-                    exact:       HashMap::new(),
-                    req_params: net_params,
-                })
+                return Ok(0);
             }
-            let mut out = TypeDepParams {
-                relat:       HashMap::new(),
-                exact:       HashMap::new(),
-                req_params: net_params,
-            };
-            let mut req_params_set = HashSet::new();
+            let mut one = HashSet::new();
             for (_, t) in l.into_iter() {
-                let deps = get_type_deps(t, net_params, ctxt.clone())?;
-                req_params_set.insert(deps.req_params);
-                // combine dependency sets
-                merge(&mut out.relat, deps.relat)?;
-                merge(&mut out.exact, deps.exact)?;
+                one.insert(get_type_params(t, num_params, vars.clone())?);
             }
-            // number of used params must be same across branches
-            match req_params_set.into_iter().exactly_one() {
-                Ok(n) => {
-                    // set used params to max of net params
-                    out.req_params = i32::max(out.req_params, n);
-                    return Ok(out);
-                },
-                _ => {
-                    return Err(TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
-                }
-            }
+            // param count must be same across branches
+            return one
+                .into_iter()
+                .exactly_one()
+                .map_err(|_| TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
         },
 
         // must check all subtrees, number of parameters to each must be the same
         TypeExpr::Function(t1, t2) => {
-            let mut out = get_type_deps(t1, net_params, ctxt.clone())?;
-            let deps = get_type_deps(t2, net_params, ctxt)?;
+            let n = get_type_params(t1, num_params, vars.clone())?;
+            let m = get_type_params(t2, num_params, vars)?;
             // number of used params must be same across branches
-            if out.req_params != deps.req_params {
+            if n != m {
                 return Err(TypeError::InconsistParams {name: "Bob".to_string()}); // TODO fix
             }
-            // set used params to max of net params
-            out.req_params = i32::max(out.req_params, net_params);
-            // combine dependency sets
-            merge(&mut out.relat, deps.relat)?;
-            merge(&mut out.exact, deps.exact)?;
-            return Ok(out);
+            return Ok(n);
         },
     }
 }
-*/
 
 // gets the type variable dependencies
 fn get_type_deps(
-    // type expression to parse
-    expr:       &TypeExpr,
-    // context of defined type variables
-    mut ctxt:   HashSet<String>,
+    // target type expression
+    type_expr: &TypeExpr,
+    // known local type variables
+    mut vars:  HashSet<String>,
 ) -> HashSet<String> {
-    match expr {
+    match type_expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
-            return if ctxt.contains(s) {
+            return if vars.contains(s) {
                 HashSet::new()
             } else {
             // not a locally-defined type var, is a dependency
@@ -306,23 +251,23 @@ fn get_type_deps(
 
         // check all parameters exactly
         TypeExpr::TypeParams(t, l) => {
-            let mut out = get_type_deps(t, ctxt.clone());
+            let mut out = get_type_deps(t, vars.clone());
             for type_expr in l.into_iter() {
-                out.extend(get_type_deps(type_expr, ctxt.clone()));
+                out.extend(get_type_deps(type_expr, vars.clone()));
             }
             return out;
         },
 
         // adds locally-defined type var from parameter
         TypeExpr::Universal(s, t) => {
-            ctxt.insert(s.to_string());
-            return get_type_deps(t, ctxt);
+            vars.insert(s.to_string());
+            return get_type_deps(t, vars);
         },
 
         // adds locally-defined type var
         TypeExpr::Existential(s, t) => {
-            ctxt.insert(s.to_string());
-            return get_type_deps(t, ctxt);
+            vars.insert(s.to_string());
+            return get_type_deps(t, vars);
         },
 
         // must check all subtrees
@@ -332,15 +277,15 @@ fn get_type_deps(
             }
             let mut out = HashSet::new();
             for (_, t) in l.into_iter() {
-                out.extend(get_type_deps(t, ctxt.clone()));
+                out.extend(get_type_deps(t, vars.clone()));
             }
             return out;
         },
 
         // must check all subtrees
         TypeExpr::Function(t1, t2) => {
-            let mut out = get_type_deps(t1, ctxt.clone());
-            out.extend(get_type_deps(t2, ctxt));
+            let mut out = get_type_deps(t1, vars.clone());
+            out.extend(get_type_deps(t2, vars));
             return out;
         },
     }
