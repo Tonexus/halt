@@ -71,15 +71,15 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
     // map of var to num params, set of undefined vars
     let (mut type_params, missing_vars): (HashMap<String, usize>, HashSet<_>) = deps.iter()
         // merge all dependencies
-        .fold(HashSet::<&String>::new(), |mut a, (_, b)| {a.extend(b); return a})
+        .fold(HashSet::<&str>::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
         // only get those that are undefined
-        .filter(|s| !deps.contains_key(*s))
+        .filter(|s| !deps.contains_key(&s.to_string()))
         // split into keyword types (getting param count) and those that are not
         .partition_map(|s| {
-            match get_kword_type_params(s) {
-                Some(n) => Left((s.clone(), n)),
-                None    => Right(s),
+            match get_kword_type_params(&s.to_string()) {
+                Some(n) => Left((s.to_string(), n)),
+                None    => Right(s.to_string()),
             }
         });
 
@@ -90,7 +90,7 @@ fn validate_type_defs(types: &HashMap<String, TypeExpr>) -> Result<(), TypeError
 
     // add dependency graph edges
     for (s1, s2) in deps.iter().flat_map(|(s, m)| iter::repeat(s).zip(m.iter())) {
-        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(s2)) {
+        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(&s2.to_string())) {
             dep_graph.add_edge(*k, *j, ());
         }
     }
@@ -229,7 +229,7 @@ fn get_type_deps<'a>(
     type_expr: &'a TypeExpr,
     // known local type variables
     mut vars:  HashSet<&'a String>,
-) -> HashSet<String> {
+) -> HashSet<&'a str> {
     match type_expr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
@@ -237,7 +237,7 @@ fn get_type_deps<'a>(
                 HashSet::new()
             } else {
             // not a locally-defined type var, is a dependency
-                HashSet::from([s.to_string()])
+                HashSet::from([s.as_str()])
             };
         },
 
@@ -290,9 +290,10 @@ mod tests {
 
     #[test]
     fn basic_type_deps_1() {
-        let deps = get_type_deps(&parser::type_expr(
+        let t = parser::type_expr(
             "([A, B], C -> C)"
-        ).unwrap(), HashSet::new());
+        ).unwrap();
+        let deps = get_type_deps(&t, HashSet::new());
         for s in ["A", "B", "C"].into_iter() {
             assert!(deps.contains(s));
         }
@@ -301,9 +302,10 @@ mod tests {
 
     #[test]
     fn medium_type_deps_1() {
-        let deps = get_type_deps(&parser::type_expr(
+        let t = parser::type_expr(
             "A! B? ([A, B], C{A} -> C{D})"
-        ).unwrap(), HashSet::new());
+        ).unwrap();
+        let deps = get_type_deps(&t, HashSet::new());
         for s in ["A", "B"].into_iter() {
             assert!(!deps.contains(s));
         }
