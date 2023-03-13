@@ -116,8 +116,11 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     return Ok(());
 }
 
-// gets the number of type parameters for a type
-// assumes all input type parameters take no parameters themselves
+// TODO allow inference of kinds of quantified variables (unify kind annotation)
+// ONLY use defs in type kinds (dependencies), kind should not change based on
+// who has this kind as its dependency
+
+// gets the kind of a type
 fn infer_kind<'a>(
     // target type expression
     texpr:      &'a TypeExpr,
@@ -173,8 +176,13 @@ fn infer_kind<'a>(
             return Ok(kexpr);
         },
 
-        // check all subtrees, kind must each be nullary
+        // if not singleton check all subtrees, kind must each be nullary
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
+            // singleton is always same kind as nested
+            if let Ok((_, t)) = l.iter().exactly_one() {
+                return infer_kind(t, &type_kinds.clone());
+            }
+
             for (_, t) in l.into_iter() {
                 if infer_kind(t, &type_kinds.clone())? != *KIND_0 {
                     return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
@@ -371,93 +379,111 @@ mod tests {
         ).unwrap() == *KIND_0);
     }
 
-   /* #[test]
-    fn medium_type_params_1() {
+    #[test]
+    fn medium_type_kind_1() {
         assert!(infer_kind(
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
-            &HashMap::from([("A", 2), ("B", 3), ("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 3);
+            &HashMap::from([
+                ("A", KIND_2.clone()),
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ).unwrap() == *KIND_0);
     }
 
     #[test]
-    fn medium_type_params_2() {
-        assert!(get_type_params(
+    fn medium_type_kind_2() {
+        assert!(infer_kind(
             &parser::type_expr(
-                "(A! A, (B! C! [B, C]){D})"
+                "A: Type -> Type -> Type! A{(B! C! [B, C]){D, D}}"
             ).unwrap(),
-            &HashMap::from([("D", 0)]),
-            HashSet::new()
-        ).unwrap() == 1);
+            &HashMap::from([
+                ("D", KIND_0.clone()),
+            ]),
+        ).unwrap() == TypeExpr::Function(
+            Box::new(KIND_2.clone()),
+            Box::new(KIND_1.clone()),
+        ));
     }
 
     #[test]
-    fn medium_type_params_3() {
-        assert!(get_type_params(
+    fn medium_type_kind_3() {
+        assert!(infer_kind(
             &parser::type_expr(
-                "(A! (A, A, A)){[B! C! ()]{D! E! F! ()}, D}"
+                "(A: Type -> Type -> Type! A){B, C}"
             ).unwrap(),
-            &HashMap::from([("D", 0)]),
-            HashSet::new()
-        ).unwrap() == 3);
+            &HashMap::from([
+                ("B", KIND_2.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ).unwrap() == *KIND_1);
     }
 
     #[test]
-    fn basic_type_params_fail_1() {
-        assert!(matches!(get_type_params(
+    fn basic_type_kind_fail_1() {
+        assert!(matches!(infer_kind(
             &parser::type_expr(
                 "(A! B, C)"
             ).unwrap(),
-            &HashMap::from([("B", 0), ("C", 0)]),
-            HashSet::new()
-        ), Err(TypeError::InconsParams(_))));
+            &HashMap::from([
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ), Err(TypeError::MustNullKind(_))));
     }
 
     #[test]
-    fn basic_type_params_fail_2() {
-        assert!(matches!(get_type_params(
+    fn basic_type_kind_fail_2() {
+        assert!(matches!(infer_kind(
             &parser::type_expr(
-                "(A, B{C! D})"
+                "(A, B{C})"
             ).unwrap(),
-            &HashMap::from([("A", 0), ("B", 0), ("D", 0)]),
-            HashSet::new()
-        ), Err(TypeError::TooManyParams)));
+            &HashMap::from([
+                ("A", KIND_0.clone()),
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ), Err(TypeError::TooManyParams(_))));
     }
 
     #[test]
-    fn basic_type_params_fail_3() {
-        assert!(matches!(get_type_params(
+    fn basic_type_kind_fail_3() {
+        assert!(matches!(infer_kind(
             &parser::type_expr(
                 "(){A}"
             ).unwrap(),
-            &HashMap::from([("A", 0)]),
-            HashSet::new()
-        ), Err(TypeError::TooManyParams)));
+            &HashMap::from([
+                ("A", KIND_0.clone()),
+            ]),
+        ), Err(TypeError::TooManyParams(_))));
     }
 
     #[test]
-    fn basic_type_params_fail_4() {
-        assert!(matches!(get_type_params(
-            &parser::type_expr(
-                "(Foo, ()){A}"
-            ).unwrap(),
-            &HashMap::from([("Foo", 0), ("A", 0)]),
-            HashSet::new()
-        ), Err(TypeError::TooManyParams)));
-    }
-
-    #[test]
-    fn basic_type_params_fail_5() {
-        assert!(matches!(get_type_params(
+    fn basic_type_kind_fail_4() {
+        assert!(matches!(infer_kind(
             &parser::type_expr(
                 "[A, ()]"
             ).unwrap(),
-            &HashMap::from([("A", 1)]),
-            HashSet::new()
-        ), Err(TypeError::InconsParams(_))));
-    }*/
+            &HashMap::from([
+                ("A", KIND_1.clone()),
+            ]),
+        ), Err(TypeError::MustNullKind(_))));
+    }
+
+    #[test]
+    fn basic_type_kind_fail_5() {
+        assert!(matches!(infer_kind(
+            &parser::type_expr(
+                "A{B}"
+            ).unwrap(),
+            &HashMap::from([
+                ("A", KIND_1.clone()),
+                ("B", KIND_2.clone()),
+            ]),
+        ), Err(TypeError::KindMismatch(_))));
+    }
 
     #[test]
     fn basic_type_defs_1() {

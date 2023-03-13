@@ -210,7 +210,7 @@ peg::parser!{
         // type expressions // TODO add plus and mul for combining sums and products?
         pub rule type_expr() -> TypeExpr<'input> = precedence!{
             // function type is only binary op
-            t1: (@) _ "->" _ t2: @ {
+            t1: @ _ "->" _ t2: (@) {
                 TypeExpr::Function(Box::new(t1), Box::new(t2))
             }
             --
