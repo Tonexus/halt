@@ -6,6 +6,7 @@ Halt is a statically typed imperative language that is heavily inspired by Rust.
 - Strong static typing
     - [Algebraic data types](docs/algebraic_data_types.md)
     - Parametric and ad hoc polymorphism
+    	- Higher kinded types (but probably not polymorphic HKTs)
     - A monadic effect system (as I understand them, a better type theorist please correct me)
         - Termination by default
         - Continuations
