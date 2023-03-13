@@ -10,13 +10,13 @@ Boolean := [
 
 // some of rust's useful basic generics
 // Res
-Result := A! B! [
+Result := !A, B . [
     okay: A,
     fail: B,
 ];
 
 // Opt
-Option := A! [
+Option := !A . [
     some: A,
     none: (),
 ];
@@ -30,8 +30,8 @@ Point3D := (
 );
 
 FullName := (
-    first:  Ascii,
-    middle: Ascii,
-    last:   Ascii,
+    first:  Ascii{N10},
+    middle: Ascii{N10},
+    last:   Ascii{N10},
 );
 

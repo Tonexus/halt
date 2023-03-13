@@ -233,6 +233,7 @@ fn get_kword_type_kind(type_name: &str) -> Option<TypeExpr> {
         "F32"   => return Some(KIND_0.clone()),
         // array
         "Arr"   => return Some(KIND_2.clone()),
+        "Ascii" => return Some(KIND_1.clone()),
         _       => {
             let f = |c: Option<Captures>| c
                 .and_then(|x| x.get(1))
@@ -380,7 +381,7 @@ mod tests {
     }
 
     #[test]
-    fn medium_type_kind_1() {
+    fn basic_type_kind_4() {
         assert!(infer_kind(
             &parser::type_expr(
                 "A{B, C}"
@@ -391,6 +392,16 @@ mod tests {
                 ("C", KIND_0.clone()),
             ]),
         ).unwrap() == *KIND_0);
+    }
+
+    #[test]
+    fn medium_type_kind_1() {
+        assert!(infer_kind(
+            &parser::type_expr(
+                "!A, B . [A, B]"
+            ).unwrap(),
+            &HashMap::new(),
+        ).unwrap() == *KIND_2);
     }
 
     #[test]

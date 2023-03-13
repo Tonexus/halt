@@ -1,7 +1,7 @@
 // Sample implementation of ascii string types and functions
 // Not representative of actual implementation (UTF debate, growable strings...)
 
-AsciiLike := Size! Arr{U8, Size};
+AsciiLike := !Size . Arr{U8, Size};
 
 // converts the ascii representation of a digit to a U8
 c_to_u8 := (c: U8) -> Opt{U8}: {
@@ -12,7 +12,7 @@ c_to_u8 := (c: U8) -> Opt{U8}: {
 };
 
 // converts ascii string to a U32
-a_to_u32 := Size! (str: AsciiLike{Size}) -> Opt{U32}: {
+a_to_u32 := !Size . (str: AsciiLike{Size}) -> Opt{U32}: {
     let acc: U32 = 0;
     let found = false;
     loop c from str {

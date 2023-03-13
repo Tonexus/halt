@@ -510,7 +510,7 @@ peg::parser!{
             }}
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> ValueExpr<'input> =
-            o1: ((n: type_name() _ "!" _ {n})+)?
+            o1: ("!" _ l: (type_name() ++ (_ ","  _)) _ "." _ {l})?
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
             _ "->" _
             o2: (t: type_expr() _ ":" _ {t})?
