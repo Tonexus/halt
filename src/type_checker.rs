@@ -9,11 +9,11 @@ use super::ast::*;
 use super::error::{CompileError, TypeError, ValueError};
 use super::misc;
 
-#[derive(Debug, PartialEq)]
+/*#[derive(Debug, PartialEq)]
 struct Context {
     types:  HashMap<String, Vec<TypeExpr>>,
     values: HashMap<String, Vec<ValueExpr>>,
-}
+}*/
 
 //fn uniquify_names(def: &mut Vec<Definition>) {
 //    let mut seen_names = HashMap::new();
@@ -35,16 +35,16 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
     for def in defs.iter() {
         match def {
             Definition::Type(t) => {
-                if types.contains_key(t.name.as_str()) {
-                    return Err(TypeError::MultiDef(t.name.clone()).into());
+                if types.contains_key(t.name) {
+                    return Err(TypeError::MultiDef(t.name.to_string()).into());
                 }
-                types.insert(t.name.as_str(), &t);
+                types.insert(t.name, &t);
             }
             Definition::Const(c) => {
-                if consts.contains_key(c.name.as_str()) {
-                    return Err(ValueError::MultiDef(c.name.clone()).into());
+                if consts.contains_key(c.name) {
+                    return Err(ValueError::MultiDef(c.name.to_string()).into());
                 }
-                consts.insert(c.name.as_str(), &c);
+                consts.insert(c.name, &c);
             }
         }
     }
@@ -123,13 +123,12 @@ fn infer_kind<'a>(
     // target type expression
     texpr:      &'a TypeExpr,
     // kind known types
-    type_kinds: &HashMap<&str, TypeExpr>,
-) -> Result<TypeExpr, TypeError> {
-    let null_kind = TypeExpr::Variable("Type".to_string());
+    type_kinds: &HashMap<&str, TypeExpr<'a>>,
+) -> Result<TypeExpr<'a>, TypeError> {
     match texpr {
         // look up variable kind
         TypeExpr::Variable(s) => {
-            return type_kinds.get(s.as_str()).map(|k| k.clone()).ok_or(TypeError::DefaultErr);
+            return type_kinds.get(s).map(|k| k.clone()).ok_or(TypeError::DefaultErr);
         },
 
         // must supply params directly to higher-kinded type
@@ -137,17 +136,14 @@ fn infer_kind<'a>(
             let mut kexpr = infer_kind(t, &type_kinds.clone())?;
             for t in l.into_iter() {
                 // check if has slots for params
-                match kexpr {
-                    TypeExpr::Function(k1, k2) => {
-                        if *k1 == infer_kind(t, &type_kinds.clone())? {
-                            kexpr = *k2;
-                        } else {
-                            return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
-                        }
-                    },
-                    _ => {
-                        return Err(TypeError::TooManyParams("TODO: FIXME".to_string())); // TODO
-                    },
+                if let TypeExpr::Function(k1, k2) = kexpr {
+                    if *k1 == infer_kind(t, &type_kinds.clone())? {
+                        kexpr = *k2;
+                    } else {
+                        return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
+                    }
+                } else {
+                    return Err(TypeError::TooManyParams("TODO: FIXME".to_string())); // TODO
                 }
             }
             return Ok(kexpr);
@@ -181,30 +177,29 @@ fn infer_kind<'a>(
         // check all subtrees, kind must each be nullary
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
             for (_, t) in l.into_iter() {
-                if infer_kind(t, &type_kinds.clone())? != null_kind {
+                if infer_kind(t, &type_kinds.clone())? != *KIND_0 {
                     return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
                 }
             }
-            return Ok(TypeExpr::Variable("Type".to_string()));
+            return Ok(KIND_0.clone());
         },
 
         // check both subtrees, kind must each be nullary
         TypeExpr::Function(t1, t2) => {
-            if infer_kind(t1, &type_kinds.clone())? != null_kind {
+            if infer_kind(t1, &type_kinds.clone())? != *KIND_0 {
                 return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
             }
-            if infer_kind(t2, type_kinds)? != null_kind {
+            if infer_kind(t2, type_kinds)? != *KIND_0 {
                 return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
             }
-            return Ok(TypeExpr::Variable("Type".to_string()));
+            return Ok(KIND_0.clone());
         },
     }
 }
 
 // only allow simple kinds (functions and nullary kind)
 fn valid_kind(kexpr: &TypeExpr) -> bool {
-    let null_kind = TypeExpr::Variable("Type".to_string());
-    if kexpr == &null_kind {
+    if kexpr == &*KIND_0 {
         return true;
     }
     return match kexpr {
@@ -217,24 +212,20 @@ fn valid_kind(kexpr: &TypeExpr) -> bool {
 fn get_kword_type_kind(type_name: &str) -> Option<TypeExpr> {
     use regex::{Regex, Captures};
     use lazy_static::lazy_static;
-    // basic kinds
-    let null_kind = TypeExpr::Variable("Type".to_string());
-    let un   = TypeExpr::Function(Box::new(null_kind.clone()), Box::new(null_kind.clone()));
-    let bin  = TypeExpr::Function(Box::new(null_kind.clone()), Box::new(un.clone()));
     match type_name {
         // integer numerics
-        "USize" => return Some(null_kind),
-        "U32"   => return Some(null_kind),
-        "U16"   => return Some(null_kind),
-        "U8"    => return Some(null_kind),
-        "SSize" => return Some(null_kind),
-        "S32"   => return Some(null_kind),
-        "S16"   => return Some(null_kind),
-        "S8"    => return Some(null_kind),
+        "USize" => return Some(KIND_0.clone()),
+        "U32"   => return Some(KIND_0.clone()),
+        "U16"   => return Some(KIND_0.clone()),
+        "U8"    => return Some(KIND_0.clone()),
+        "SSize" => return Some(KIND_0.clone()),
+        "S32"   => return Some(KIND_0.clone()),
+        "S16"   => return Some(KIND_0.clone()),
+        "S8"    => return Some(KIND_0.clone()),
         // floating point number
-        "F32"   => return Some(null_kind),
+        "F32"   => return Some(KIND_0.clone()),
         // array
-        "Arr"   => return Some(bin),
+        "Arr"   => return Some(KIND_2.clone()),
         _       => {
             let f = |c: Option<Captures>| c
                 .and_then(|x| x.get(1))
@@ -244,7 +235,7 @@ fn get_kword_type_kind(type_name: &str) -> Option<TypeExpr> {
                 static ref ENUM: Regex = Regex::new("^N(\\d+)$").unwrap();
             }
             if f(ENUM.captures(type_name)).is_some() {
-                return Some(null_kind);
+                return Some(KIND_0.clone());
             }
         },
     }
@@ -261,11 +252,11 @@ fn get_type_deps<'a>(
     match texpr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
-            return if vars.contains(s.as_str()) {
+            return if vars.contains(s) {
                 HashSet::new()
             } else {
             // not a locally-defined type var, is a dependency
-                HashSet::from([s.as_str()])
+                HashSet::from([*s])
             };
         },
 

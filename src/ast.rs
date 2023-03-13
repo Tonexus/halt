@@ -1,58 +1,64 @@
 // ast for halt
 
-//pub const null_kind: TypeExpr = TypeExpr::Variable("Type".to_string());
+use lazy_static::lazy_static;
 
-#[derive(Debug, PartialEq)]
-pub enum Definition {
-    Type(TypeDef),
-    Const(ConstDef),
+lazy_static! {
+    pub static ref KIND_0: TypeExpr<'static> = TypeExpr::Variable("Type");
+    pub static ref KIND_1: TypeExpr<'static> = TypeExpr::Function(Box::new(KIND_0.clone()), Box::new(KIND_0.clone()));
+    pub static ref KIND_2: TypeExpr<'static> = TypeExpr::Function(Box::new(KIND_0.clone()), Box::new(KIND_1.clone()));
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TypeDef {
-    pub name:  String,
-    pub kexpr: Option<TypeExpr>,
-    pub texpr: TypeExpr,
+pub enum Definition<'a> {
+    Type(TypeDef<'a>),
+    Const(ConstDef<'a>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ConstDef {
-    pub name:  String,
-    pub texpr: Option<TypeExpr>,
-    pub vexpr: ValueExpr,
+pub struct TypeDef<'a> {
+    pub name:  &'a str,
+    pub kexpr: Option<TypeExpr<'a>>,
+    pub texpr: TypeExpr<'a>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ConstDef<'a> {
+    pub name:  &'a str,
+    pub texpr: Option<TypeExpr<'a>>,
+    pub vexpr: ValueExpr<'a>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum TypeExpr {
-    Variable(String),
-    TypeParams(Box<TypeExpr>, Vec<TypeExpr>),
+pub enum TypeExpr<'a> {
+    Variable(&'a str),
+    TypeParams(Box<TypeExpr<'a>>, Vec<TypeExpr<'a>>),
     Quantified {
-        params:  Vec<(String, TypeExpr)>,
+        params:  Vec<(&'a str, TypeExpr<'a>)>,
         is_univ: bool,
-        subexpr: Box<TypeExpr>,
+        subexpr: Box<TypeExpr<'a>>,
     },
-    Prod(Vec<(String, TypeExpr)>),
-    Sum(Vec<(String, TypeExpr)>),
-    Function(Box<TypeExpr>, Box<TypeExpr>), // TODO add closure
+    Prod(Vec<(&'a str, TypeExpr<'a>)>),
+    Sum(Vec<(&'a str, TypeExpr<'a>)>),
+    Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>), // TODO add closure
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ValueExpr {
-    pub variant: ExprVariant,
-    pub texpr:   Option<TypeExpr>,
+pub struct ValueExpr<'a> {
+    pub variant: ExprVariant<'a>,
+    pub texpr:   Option<TypeExpr<'a>>,
 }
 
 // TODO flesh these out
 // TODO define Place as type of expr variant that may be on LHS of assignment
 #[derive(Debug, PartialEq)]
-pub enum ExprVariant {
-    Variable(String),
+pub enum ExprVariant<'a> {
+    Variable(&'a str),
     Literal(LitVariant),
-    BinaryOp(BinOpVariant, Box<ValueExpr>, Box<ValueExpr>),
-    UnaryOp(UnOpVariant, Box<ValueExpr>),
-    Prod(Vec<(String, ValueExpr)>),
-    Sum(String, Box<ValueExpr>),
-    Closure(Closure),
+    BinaryOp(BinOpVariant<'a>, Box<ValueExpr<'a>>, Box<ValueExpr<'a>>),
+    UnaryOp(UnOpVariant<'a>, Box<ValueExpr<'a>>),
+    Prod(Vec<(&'a str, ValueExpr<'a>)>),
+    Sum(&'a str, Box<ValueExpr<'a>>),
+    Closure(Closure<'a>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,7 +71,7 @@ pub enum LitVariant {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum BinOpVariant {
+pub enum BinOpVariant<'a> {
     Pow,
     Log,
     Mul,
@@ -81,15 +87,15 @@ pub enum BinOpVariant {
     Neq,
     And,
     Or,
-    Call(Vec<TypeExpr>),
+    Call(Vec<TypeExpr<'a>>),
 }
 
 // TODO add . field access
 // TODO add .. UFCS
 // TODO add ~ copy
 #[derive(Debug, PartialEq)]
-pub enum UnOpVariant {
-    Field(String),
+pub enum UnOpVariant<'a> {
+    Field(&'a str),
     Cast,
     Ref,
     Deref,
@@ -99,52 +105,52 @@ pub enum UnOpVariant {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Closure {
-    pub params:      Vec<(String, Option<TypeExpr>)>,
-    pub type_params: Vec<String>,
-    pub returns:     Option<TypeExpr>,
-    pub body:        Vec<Statement>,
+pub struct Closure<'a> {
+    pub params:      Vec<(&'a str, Option<TypeExpr<'a>>)>,
+    pub type_params: Vec<&'a str>,
+    pub returns:     Option<TypeExpr<'a>>,
+    pub body:        Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Statement {
-    Expr(ValueExpr),
-    Def(Definition),
-    Let(ValueExpr, Option<ValueExpr>),
-    Assign(ValueExpr, ValueExpr),
-    Return(ValueExpr),
+pub enum Statement<'a> {
+    Expr(ValueExpr<'a>),
+    Def(Definition<'a>),
+    Let(ValueExpr<'a>, Option<ValueExpr<'a>>),
+    Assign(ValueExpr<'a>, ValueExpr<'a>),
+    Return(ValueExpr<'a>),
     Break,
     Continue,
-    Match(Match),
-    If(If),
-    Loop(Loop),
-    With(Vec<Statement>),
+    Match(Match<'a>),
+    If(If<'a>),
+    Loop(Loop<'a>),
+    With(Vec<Statement<'a>>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Match {
-    pub value:       ValueExpr,
-    pub to_branches: Vec<ToBranch>,
-    pub else_branch: Vec<Statement>,
+pub struct Match<'a> {
+    pub value:       ValueExpr<'a>,
+    pub to_branches: Vec<ToBranch<'a>>,
+    pub else_branch: Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct ToBranch {
-    pub pattern: Vec<ValueExpr>,
-    pub block:   Vec<Statement>,
+pub struct ToBranch<'a> {
+    pub pattern: Vec<ValueExpr<'a>>,
+    pub block:   Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct If {
-    pub value:       ValueExpr,
-    pub then_branch: Vec<Statement>,
-    pub else_branch: Vec<Statement>,
+pub struct If<'a> {
+    pub value:       ValueExpr<'a>,
+    pub then_branch: Vec<Statement<'a>>,
+    pub else_branch: Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Loop {
-    pub value: ValueExpr,
-    pub iter:  ValueExpr,
-    pub body:  Vec<Statement>,
+pub struct Loop<'a> {
+    pub value: ValueExpr<'a>,
+    pub iter:  ValueExpr<'a>,
+    pub body:  Vec<Statement<'a>>,
 }
 

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use super::ast::*;
 use super::parser;
-
+/*
 // non-numeric types
 pub fn get_basic_kword_type_exprs() -> HashMap<&'static str, TypeExpr> {
     let mut out = HashMap::new();
@@ -14,4 +14,4 @@ pub fn get_basic_kword_type_exprs() -> HashMap<&'static str, TypeExpr> {
     out.insert("Ascii", parser::type_expr("N! Arr{U8, N}").unwrap());
     return out;
 }
-
+*/

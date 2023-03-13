@@ -4,6 +4,8 @@ use super::ast::*;
 
 pub use program_parser::*;
 
+const LABELS: [&str; 10] = ["_0", "_1", "_2", "_3", "_4", "_5", "_6", "_7", "_8", "_9"];
+
 peg::parser!{
     grammar program_parser() for str {
         // **************
@@ -87,59 +89,65 @@ peg::parser!{
                 s.parse::<f32>().map_err(|_| "failed to parse float")
             }
         // string TODO fix escape sequences
-        rule literal_string() -> String =
-            "\"" s: $(([^'\"'] / "\\\"")*) "\"" { s.to_string() }
+        rule literal_string() -> &'input str =
+            "\"" s: $(([^'\"'] / "\\\"")*) "\"" { s }
 
         // *************
         // MISCELLANEOUS
         // *************
 
         // rule for type annotation/casting
-        rule type_annot() -> TypeExpr =
+        rule type_annot() -> TypeExpr<'input> =
             _ ":" _ t: type_expr() {t}
         // labeled type
-        rule labeled_type() -> (String, TypeExpr) =
+        rule labeled_type() -> (&'input str, TypeExpr<'input>) =
             n: label_name() t: type_annot() {(n, t)}
         // labeled value
-        rule labeled_value() -> (String, ValueExpr) =
+        rule labeled_value() -> (&'input str, ValueExpr<'input>) =
             n: label_name() _ "=" _ v: value_expr() {(n, v)}
         // optionally kinded type name
-        rule opt_kinded_type_name() -> (String, Option<TypeExpr>) =
+        rule opt_kinded_type_name() -> (&'input str, Option<TypeExpr<'input>>) =
             n: type_name() o: type_annot()? {(n, o)}
         // optionally typed value name
-        rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
+        rule opt_typed_value_name() -> (&'input str, Option<TypeExpr<'input>>) =
             n: value_name() o: type_annot()? {(n, o)}
         // type list
-        rule type_list() -> Vec<TypeExpr> =
+        rule type_list() -> Vec<TypeExpr<'input>> =
             l: (type_expr() ++ (_ "," _)) (_ ",")? {l}
         // labeled type list
-        rule labeled_type_list() -> Vec<(String, TypeExpr)> =
+        rule labeled_type_list() -> Vec<(&'input str, TypeExpr<'input>)> =
             l: (labeled_type() ++ (_ "," _)) (_ ",")? {l}
         // type list with implicit labels
-        rule type_list_labeled() -> Vec<(String, TypeExpr)> =
-            l: type_list() {
-                l.into_iter().enumerate().map(
-                    |(n, t)| ("_".to_owned() + &n.to_string(), t)
-                ).collect()
+        rule type_list_labeled() -> Vec<(&'input str, TypeExpr<'input>)> =
+            l: type_list() {?
+                if l.len() > 10 {
+                    return Err("Too many labels");
+                }
+                return Ok(l.into_iter().enumerate().map(
+                    |(n, t)| (LABELS[n], t)
+                ).collect());
             }
         // no types in type list
-        rule empty_type() -> Vec<(String, TypeExpr)> =
+        rule empty_type() -> Vec<(&'input str, TypeExpr<'input>)> =
             "" {Vec::new()}
         // value list
-        rule value_list() -> Vec<ValueExpr> =
+        rule value_list() -> Vec<ValueExpr<'input>> =
             l: (value_expr() ++ (_ "," _)) (_ ",")? {l}
         // labeled value list
-        rule labeled_value_list() -> Vec<(String, ValueExpr)> =
+        rule labeled_value_list() -> Vec<(&'input str, ValueExpr<'input>)> =
             l: (labeled_value() ++ (_ "," _)) (_ ",")? {l}
         // value list with implicit labels
-        rule value_list_labeled() -> Vec<(String, ValueExpr)> =
-            l: value_list() {
-                l.into_iter().enumerate().map(
-                    |(n, t)| ("_".to_owned() + &n.to_string(), t)
-                ).collect()
+        rule value_list_labeled() -> Vec<(&'input str, ValueExpr<'input>)> =
+            l: value_list() {?
+                if l.len() > 10 {
+                    return Err("Too many labels");
+                }
+                return Ok(l.into_iter().enumerate().map(
+                    |(n, v)| (LABELS[n], v)
+                ).collect());
             }
         // no values in value list
-        rule empty_value() -> Vec<(String, ValueExpr)> =
+        rule empty_value() -> Vec<(&'input str, ValueExpr<'input>)> =
             "" {Vec::new()}
 
         // ************************
@@ -147,24 +155,24 @@ peg::parser!{
         // ************************
 
         // user defined variable names
-        rule value_name() -> String = // TODO later check for leading _ in var name
+        rule value_name() -> &'input str = // TODO later check for leading _ in var name
             quiet!{
                 !kw() n: $(lower() value_char()*) !value_char() {
-                    n.to_string()
+                    n
                 }
             } / expected!("value variable name")
         // user defined label names for product fields or sum tags
-        rule label_name() -> String =
+        rule label_name() -> &'input str =
             quiet!{
                 !kw() n: $(value_char()+) !value_char() {
-                    n.to_string()
+                    n
                 }
             } / expected!("label name")
         // user defined type names
-        rule type_name() -> String =
+        rule type_name() -> &'input str =
             quiet!{
                 !kw() n: $(upper() alphanum()*) !type_char() {
-                    n.to_string()
+                    n
                 }
             } / expected!("type variable name")
 
@@ -173,11 +181,11 @@ peg::parser!{
         // *********************
 
         // collect all top-level definitions
-        pub rule defs() -> Vec<Definition> =
+        pub rule defs() -> Vec<Definition<'input>> =
             _ d: (def() **  _) _ {d}
-        rule def() -> Definition = type_def() / const_def()
+        rule def() -> Definition<'input> = type_def() / const_def()
         // definition of a type
-        rule type_def() -> Definition =
+        rule type_def() -> Definition<'input> =
             n: opt_kinded_type_name() _ ":=" _ t: type_expr() _ ";" {
                 Definition::Type(TypeDef {
                     name:  n.0,
@@ -186,7 +194,7 @@ peg::parser!{
                 })
             }
         // definition of a constant variable
-        rule const_def() -> Definition =
+        rule const_def() -> Definition<'input> =
             n: opt_typed_value_name() _ ":=" _ v: value_expr() _ ";" {
                 Definition::Const(ConstDef{
                     name:  n.0,
@@ -200,7 +208,7 @@ peg::parser!{
         // ****************
 
         // type expressions // TODO add plus and mul for combining sums and products?
-        pub rule type_expr() -> TypeExpr = precedence!{
+        pub rule type_expr() -> TypeExpr<'input> = precedence!{
             // function type is only binary op
             t1: (@) _ "->" _ t2: @ {
                 TypeExpr::Function(Box::new(t1), Box::new(t2))
@@ -208,10 +216,9 @@ peg::parser!{
             --
             // declare new universal or existential type variable
             l: (opt_kinded_type_name() ++ (_ "," _) ) _ b: (univ() / exis()) _ t: @ {
-                let null_kind = TypeExpr::Variable("Type".to_string());
                 TypeExpr::Quantified {
                     params:  l.into_iter()
-                        .map(|(n, o)| (n, o.unwrap_or(null_kind.clone())))
+                        .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
                         .collect(),
                     is_univ: b,
                     subexpr: Box::new(t),
@@ -233,21 +240,21 @@ peg::parser!{
         rule univ() -> bool = "!" {true}
         rule exis() -> bool = "?" {false}
         // keyword type
-        rule keyword_type() -> TypeExpr =
+        rule keyword_type() -> TypeExpr<'input> =
             n: $(kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
             kw_res() / kw_arr() / kw_ascii()) { 
-            TypeExpr::Variable(n.to_string())
+            TypeExpr::Variable(n)
         }
         // type variable
-        rule variable_type() -> TypeExpr =
+        rule variable_type() -> TypeExpr<'input> =
             n: type_name() {TypeExpr::Variable(n)}
         // product type, implicit fields, explicit fields, or empty
-        rule prod_type() -> TypeExpr =
+        rule prod_type() -> TypeExpr<'input> =
             "(" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ ")" {
                 TypeExpr::Prod(l)
             }
         // sum type, implicit fields, explicit fields, or empty
-        rule sum_type() -> TypeExpr =
+        rule sum_type() -> TypeExpr<'input> =
             "[" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ "]" {
                 TypeExpr::Sum(l)
             }
@@ -256,7 +263,7 @@ peg::parser!{
         // VALUE EXPRESSIONS
         // *****************
 
-        pub rule value_expr() -> ValueExpr = precedence!{
+        pub rule value_expr() -> ValueExpr<'input> = precedence!{
             // equality
             e1: (@) _ "==" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -460,49 +467,49 @@ peg::parser!{
             e: sum_expr() {e}
         }
         // any literal
-        rule lit_expr() -> ValueExpr =
+        rule lit_expr() -> ValueExpr<'input> =
             quiet!{
                 lit_unit_expr() / lit_bool_expr() / lit_int_expr() /
                 lit_float_expr() / lit_ascii_expr()
             } / expected!("literal expression")
         // unit literal
-        rule lit_unit_expr() -> ValueExpr =
+        rule lit_unit_expr() -> ValueExpr<'input> =
             "(" _ ")" { ValueExpr {
                 variant:   ExprVariant::Prod(Vec::new()),
                 texpr: Some(TypeExpr::Prod(Vec::new())),
             }}
         // boolean literal
-        rule lit_bool_expr() -> ValueExpr =
+        rule lit_bool_expr() -> ValueExpr<'input> =
             b: (literal_true() / literal_false()) { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Bool(b)),
-                texpr: Some(TypeExpr::Variable("Bool".to_string())),
+                texpr: Some(TypeExpr::Variable("Bool")),
             }}
         // signed integer literal
-        rule lit_int_expr() -> ValueExpr =
+        rule lit_int_expr() -> ValueExpr<'input> =
             n: literal_integer() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Integer(n)),
-                texpr: Some(TypeExpr::Variable("S32".to_string())),
+                texpr: Some(TypeExpr::Variable("S32")),
             }}
         // floating point literal
-        rule lit_float_expr() -> ValueExpr =
+        rule lit_float_expr() -> ValueExpr<'input> =
             x: literal_float() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Float(x)),
-                texpr: Some(TypeExpr::Variable("F32".to_string())),
+                texpr: Some(TypeExpr::Variable("F32")),
             }}
         // ascii string literal
-        rule lit_ascii_expr() -> ValueExpr =
+        rule lit_ascii_expr() -> ValueExpr<'input> =
             s: literal_string() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
-                texpr: Some(TypeExpr::Variable("Ascii".to_string())),
+                texpr: Some(TypeExpr::Variable("Ascii")),
             }}
         // value variable
-        rule variable_expr() -> ValueExpr =
+        rule variable_expr() -> ValueExpr<'input> =
             n: value_name() { ValueExpr {
                 variant:   ExprVariant::Variable(n),
                 texpr: None,
             }}
         // closure expression (functions are closures with no closed-over vars)
-        rule closure_expr() -> ValueExpr =
+        rule closure_expr() -> ValueExpr<'input> =
             o1: ((n: type_name() _ "!" _ {n})+)?
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
             _ "->" _
@@ -520,7 +527,7 @@ peg::parser!{
                 texpr: None,
             }}
         // product expression TODO: allow typed fields?
-        rule prod_expr() -> ValueExpr =
+        rule prod_expr() -> ValueExpr<'input> =
             "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
                 ValueExpr {
                     variant:   ExprVariant::Prod(l),
@@ -529,8 +536,8 @@ peg::parser!{
             }
         // choice expression TODO: allow types to imply position?
         // tagged expression TODO: allow typed tags?
-        rule sum_expr() -> ValueExpr =
-            "[" _ e: (labeled_value() / (e: value_expr() {("_0".to_string(), e)})) _ "]" {
+        rule sum_expr() -> ValueExpr<'input> =
+            "[" _ e: (labeled_value() / (e: value_expr() {("_0", e)})) _ "]" {
                 ValueExpr {
                     variant:   ExprVariant::Sum(e.0, Box::new(e.1)),
                     texpr: None,
@@ -548,14 +555,14 @@ peg::parser!{
         // **********
 
         // a brace-enclosed block of statements
-        rule block() -> Vec<Statement> =
+        rule block() -> Vec<Statement<'input>> =
             "{" _ s: (stmt() ** _) _ "}" {s}
-        rule stmt() -> Statement =
+        rule stmt() -> Statement<'input> =
             return_stmt() / break_stmt() / continue_stmt() / match_stmt() /
             if_stmt() / loop_stmt() / let_stmt() / def_stmt() / assign_stmt() /
             expr_stmt()
         // return statement
-        rule return_stmt() -> Statement =
+        rule return_stmt() -> Statement<'input> =
             kw_return() _ o: (e: value_expr() _ {e})? ";" { Statement::Return(
                 match o {
                     Some(e) => e,
@@ -566,13 +573,13 @@ peg::parser!{
                 }
             )}
         // break statement
-        rule break_stmt() -> Statement =
+        rule break_stmt() -> Statement<'input> =
             kw_break() _ ";" { Statement::Break }
         // continue statement
-        rule continue_stmt() -> Statement =
+        rule continue_stmt() -> Statement<'input> =
             kw_continue() _ ";" { Statement::Continue }
         // match statement (is not exhaustive)
-        rule match_stmt() -> Statement =
+        rule match_stmt() -> Statement<'input> =
             kw_match() _
             e: value_expr() _
             l1: (to_branch() ++ _)
@@ -587,7 +594,7 @@ peg::parser!{
                 })
             }
         // if statement
-        rule if_stmt() -> Statement =
+        rule if_stmt() -> Statement<'input> =
             kw_if() _
             e: value_expr() _
             l1: block()
@@ -602,36 +609,36 @@ peg::parser!{
                 })
             }
         // to branch of a match statement TODO expr must const TODO sum destructure
-        rule to_branch() -> ToBranch =
+        rule to_branch() -> ToBranch<'input> =
             l1: (kw_to() _ e: value_expr() _ {e})+ l2: block() {
                 ToBranch{pattern: l1, block: l2}
             }
         // else branch of match or if
-        rule else_branch() -> Vec<Statement> =
+        rule else_branch() -> Vec<Statement<'input>> =
             kw_else() _ l: (block() / (s: (match_stmt() / if_stmt()) {
                 Vec::from([s])
             })) {l}
         // loop statement
-        rule loop_stmt() -> Statement =
+        rule loop_stmt() -> Statement<'input> =
             kw_loop() _ e1: value_expr() _ kw_from() _ e2: value_expr() _
             l: block() {
                 Statement::Loop(Loop{value: e1, iter: e2, body: l})
             }
         // let statement TODO LHS destructure
-        rule let_stmt() -> Statement =
+        rule let_stmt() -> Statement<'input> =
             kw_let() _ e1: value_expr() _ o: ("=" _ e2: value_expr() _ ";" {e2})? {
                 Statement::Let(e1, o)
             }
         // local definition statement
-        rule def_stmt() -> Statement =
+        rule def_stmt() -> Statement<'input> =
             d: def() { Statement::Def(d) }
         // assignment statement TODO LHS destructure
-        rule assign_stmt() -> Statement =
+        rule assign_stmt() -> Statement<'input> =
             e1: value_expr() _ "=" _ e2: value_expr() _ ";" {
                 Statement::Assign(e1, e2)
             }
         // expression statement
-        rule expr_stmt() -> Statement =
+        rule expr_stmt() -> Statement<'input> =
             e: value_expr() _ ";" { Statement::Expr(e) }
     }
 }
@@ -643,28 +650,27 @@ mod tests {
     fn basic_type_def_1() {
         assert_eq!(defs("Foo := Int;"), Ok(
             Vec::from([Definition::Type(TypeDef {
-                name:  "Foo".to_string(),
+                name:  "Foo",
                 kexpr: None,
-                texpr: TypeExpr::Variable("Int".to_string()),
+                texpr: TypeExpr::Variable("Int"),
             })])
         ));
     }
 
     #[test]
     fn medium_type_def_1() {
-        let null_kind = TypeExpr::Variable("Type".to_string());
         assert_eq!(defs("Foo := A! (A, [int: Int, float: Float]);"), Ok(
             Vec::from([Definition::Type(TypeDef {
-                name:  "Foo".to_string(),
+                name:  "Foo",
                 kexpr: None,
                 texpr: TypeExpr::Quantified {
-                    params:  Vec::from([("A".to_string(), null_kind.clone())]),
+                    params:  Vec::from([("A", KIND_0.clone())]),
                     is_univ: true,
                     subexpr: Box::new(TypeExpr::Prod(Vec::from([
-                        ("_0".to_string(), TypeExpr::Variable("A".to_string())),
-                        ("_1".to_string(), TypeExpr::Sum(Vec::from([
-                            ("int".to_string(), TypeExpr::Variable("Int".to_string())),
-                            ("float".to_string(), TypeExpr::Variable("Float".to_string())),
+                        ("_0", TypeExpr::Variable("A")),
+                        ("_1", TypeExpr::Sum(Vec::from([
+                            ("int", TypeExpr::Variable("Int")),
+                            ("float", TypeExpr::Variable("Float")),
                         ]))),
                     ]))),
                 },
@@ -676,18 +682,18 @@ mod tests {
     fn basic_const_def_1() {
         assert_eq!(defs("foo := bar + false;"), Ok(
             Vec::from([Definition::Const(ConstDef {
-                name:  "foo".to_string(),
+                name:  "foo",
                 texpr: None,
                 vexpr: ValueExpr {
                     variant: ExprVariant::BinaryOp(
                         BinOpVariant::Add,
                         Box::new(ValueExpr {
-                            variant:   ExprVariant::Variable("bar".to_string()),
+                            variant:   ExprVariant::Variable("bar"),
                             texpr: None,
                         }),
                         Box::new(ValueExpr {
                             variant:   ExprVariant::Literal(LitVariant::Bool(false)),
-                            texpr: Some(TypeExpr::Variable("Bool".to_string())),
+                            texpr: Some(TypeExpr::Variable("Bool")),
                         }),
                     ),
                     texpr:   None,
@@ -703,15 +709,14 @@ mod tests {
 
     #[test]
     fn basic_type_expr_1() {
-        let null_kind = TypeExpr::Variable("Type".to_string());
         assert_eq!(type_expr("A? Foo{A}"), Ok(
             TypeExpr::Quantified {
-                params:  Vec::from([("A".to_string(), null_kind.clone())]),
+                params:  Vec::from([("A", KIND_0.clone())]),
                 is_univ: false,
                 subexpr: Box::new(
                     TypeExpr::TypeParams(
-                        Box::new(TypeExpr::Variable("Foo".to_string())),
-                        Vec::from([TypeExpr::Variable("A".to_string())]),
+                        Box::new(TypeExpr::Variable("Foo")),
+                        Vec::from([TypeExpr::Variable("A")]),
                     )
                 ),
             }
@@ -723,7 +728,7 @@ mod tests {
         assert_eq!(value_expr("[some = 1 + 1]"), Ok(
             ValueExpr {
                 variant: ExprVariant::Sum(
-                    "some".to_string(),
+                    "some",
                     Box::new(value_expr("1 + 1").unwrap()),
                 ),
                 texpr:   None,
@@ -777,8 +782,8 @@ mod tests {
     /*assert_eq!(
         parser::function("fn foo:(a:Int)->():={}"),
         Ok(Function{
-            name: "foo".to_string(),
-            params: Vec::from([("a".to_string(), TypeExpr::Variable("Int".to_string()))]),
+            name: "foo",
+            params: Vec::from([("a", TypeExpr::Variable("Int"))]),
             returns: TypeExpr::Tuple(Vec::new()),
             body: Vec::new(),
         })
@@ -786,11 +791,11 @@ mod tests {
     assert_eq!(
         parser::function("fn bar:()->(Int,Int):={let m:()=();}"),
         Ok(Function{
-            name: "bar".to_string(),
+            name: "bar",
             params: Vec::new(),
             returns: TypeExpr::Tuple(Vec::from([
-                TypeExpr::Variable("Int".to_string()),
-                TypeExpr::Variable("Int".to_string()),
+                TypeExpr::Variable("Int"),
+                TypeExpr::Variable("Int"),
             ])),
             body: Vec::from([Statement::Let]),
         })
