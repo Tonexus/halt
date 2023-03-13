@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn medium_type_deps_1() {
         let t = parser::type_expr(
-            "A! B? ([A, B], C{A} -> C{D})"
+            "!A . ?B . ([A, B], C{A} -> C{D})"
         ).unwrap();
         let deps = get_type_deps(&t, HashSet::new());
         for s in ["A", "B"].into_iter() {
@@ -357,7 +357,7 @@ mod tests {
     fn basic_type_kind_2() {
         assert!(infer_kind(
             &parser::type_expr(
-                "A! (A, B, C)"
+                "!A . (A, B, C)"
             ).unwrap(),
             &HashMap::from([
                 ("B", KIND_0.clone()),
@@ -370,7 +370,7 @@ mod tests {
     fn basic_type_kind_3() {
         assert!(infer_kind(
             &parser::type_expr(
-                "(A: Type -> Type? A{C}, B)"
+                "(?A: Type -> Type . A{C}, B)"
             ).unwrap(),
             &HashMap::from([
                 ("B", KIND_0.clone()),
@@ -397,7 +397,7 @@ mod tests {
     fn medium_type_kind_2() {
         assert!(infer_kind(
             &parser::type_expr(
-                "A: Type -> Type -> Type! A{(B! C! [B, C]){D, D}}"
+                "!A: Type -> Type -> Type . A{(!B . !C . [B, C]){D, D}}"
             ).unwrap(),
             &HashMap::from([
                 ("D", KIND_0.clone()),
@@ -412,7 +412,7 @@ mod tests {
     fn medium_type_kind_3() {
         assert!(infer_kind(
             &parser::type_expr(
-                "(A: Type -> Type -> Type! A){B, C}"
+                "(!A: Type -> Type -> Type . A){B, C}"
             ).unwrap(),
             &HashMap::from([
                 ("B", KIND_2.clone()),
@@ -425,7 +425,7 @@ mod tests {
     fn basic_type_kind_fail_1() {
         assert!(matches!(infer_kind(
             &parser::type_expr(
-                "(A! B, C)"
+                "(!A . B, C)"
             ).unwrap(),
             &HashMap::from([
                 ("B", KIND_0.clone()),
@@ -486,6 +486,16 @@ mod tests {
     }
 
     #[test]
+    fn basic_type_kind_fail_6() {
+        assert!(matches!(infer_kind(
+            &parser::type_expr(
+                "!A: BadKind . A"
+            ).unwrap(),
+            &HashMap::new(),
+        ), Err(TypeError::BadKind(_))));
+    }
+
+    #[test]
     fn basic_type_defs_1() {
         assert!(check_defs(parser::defs(
             "Foo := U32;"
@@ -509,7 +519,7 @@ mod tests {
     #[test]
     fn medium_type_defs_1() {
         assert!(check_defs(parser::defs(
-            "Foo := A! Bar{A}; Bar := B! C! [B, C]; Baz := Foo{U32};"
+            "Foo := !A . Bar{A}; Bar := !B, C . [B, C]; Baz := Foo{U32};"
         ).unwrap()).is_ok());
     }
 

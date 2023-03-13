@@ -215,7 +215,7 @@ peg::parser!{
             }
             --
             // declare new universal or existential type variable
-            l: (opt_kinded_type_name() ++ (_ "," _) ) _ b: (univ() / exis()) _ t: @ {
+            b: (univ() / exis()) _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
                 TypeExpr::Quantified {
                     params:  l.into_iter()
                         .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn medium_type_def_1() {
-        assert_eq!(defs("Foo := A! (A, [int: Int, float: Float]);"), Ok(
+        assert_eq!(defs("Foo := !A. (A, [int: Int, float: Float]);"), Ok(
             Vec::from([Definition::Type(TypeDef {
                 name:  "Foo",
                 kexpr: None,
@@ -709,7 +709,7 @@ mod tests {
 
     #[test]
     fn basic_type_expr_1() {
-        assert_eq!(type_expr("A? Foo{A}"), Ok(
+        assert_eq!(type_expr("?A. Foo{A}"), Ok(
             TypeExpr::Quantified {
                 params:  Vec::from([("A", KIND_0.clone())]),
                 is_univ: false,
