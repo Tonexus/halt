@@ -1,5 +1,7 @@
 // ast for halt
 
+//pub const null_kind: TypeExpr = TypeExpr::Variable("Type".to_string());
+
 #[derive(Debug, PartialEq)]
 pub enum Definition {
     Type(TypeDef),
@@ -8,23 +10,27 @@ pub enum Definition {
 
 #[derive(Debug, PartialEq)]
 pub struct TypeDef {
-    pub name: String,
-    pub expr: TypeExpr,
+    pub name:  String,
+    pub kexpr: Option<TypeExpr>,
+    pub texpr: TypeExpr,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ConstDef {
-    pub name:      String,
-    pub type_expr: Option<TypeExpr>,
-    pub expr:      ValueExpr,
+    pub name:  String,
+    pub texpr: Option<TypeExpr>,
+    pub vexpr: ValueExpr,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum TypeExpr {
     Variable(String),
     TypeParams(Box<TypeExpr>, Vec<TypeExpr>),
-    Universal(String, Box<TypeExpr>),
-    Existential(String, Box<TypeExpr>),
+    Quantified {
+        params:  Vec<(String, TypeExpr)>,
+        is_univ: bool,
+        subexpr: Box<TypeExpr>,
+    },
     Prod(Vec<(String, TypeExpr)>),
     Sum(Vec<(String, TypeExpr)>),
     Function(Box<TypeExpr>, Box<TypeExpr>), // TODO add closure
@@ -32,8 +38,8 @@ pub enum TypeExpr {
 
 #[derive(Debug, PartialEq)]
 pub struct ValueExpr {
-    pub variant:   ExprVariant,
-    pub type_expr: Option<TypeExpr>,
+    pub variant: ExprVariant,
+    pub texpr:   Option<TypeExpr>,
 }
 
 // TODO flesh these out

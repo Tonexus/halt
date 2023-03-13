@@ -34,31 +34,40 @@ peg::parser!{
         // ********
 
         // TODO have true/false/i/inline/yield/enter just be unoverwritable vars?
+        // kinds
+        rule kw_type()     = "Type" !name_char()
+
+        // types
         rule kw_arr()      = "Arr" !name_char()
         rule kw_ascii()    = "Ascii" !name_char()
-        rule kw_bool( )    = "Bool" !name_char()
+        rule kw_bool()     = "Bool" !name_char()
+        rule kw_enum()     = "N" (s: $(num()+) {? s.parse::<u32>().map_err(|_| "u32")}) !name_char()
+        rule kw_float()    = "F32" !name_char()
+        rule kw_int()      = ['S' | 'U'] ("8" / "16" / "32" / "Size") !name_char()
+        rule kw_opt()      = "Opt" !name_char()
+        rule kw_res()      = "Res" !name_char()
+
+        // values
+        rule kw_false()    = "false" !name_char()
+        rule kw_i()        = "i" !name_char()
+        rule kw_true()     = "true" !name_char()
+
+        // statements
         rule kw_break()    = "break" !name_char()
         rule kw_continue() = "continue" !name_char()
         rule kw_else()     = "else" !name_char()
-        rule kw_enum()     = "N" (s: $(num()+) {? s.parse::<u32>().map_err(|_| "u32")}) !name_char()
-        rule kw_false()    = "false" !name_char()
-        rule kw_float()    = "F32" !name_char()
         rule kw_from()     = "from" !name_char()
-        rule kw_i()        = "i" !name_char()
         rule kw_if()       = "if" !name_char()
-        rule kw_int()      = ['S' | 'U'] ("8" / "16" / "32" / "Size") !name_char()
         rule kw_let()      = "let" !name_char()
         rule kw_loop()     = "loop" !name_char()
         rule kw_match()    = "match" !name_char()
-        rule kw_opt()      = "Opt" !name_char()
-        rule kw_res()      = "Res" !name_char()
         rule kw_return()   = "return" !name_char()
         rule kw_to()       = "to" !name_char()
-        rule kw_true()     = "true" !name_char()
         rule kw() = kw_arr() / kw_ascii() / kw_bool() / kw_break() /
             kw_continue() / kw_else() / kw_enum() / kw_false() / kw_float() /
             kw_from() / kw_i() / kw_if() / kw_int() / kw_let() / kw_loop() /
-            kw_match() / kw_opt() / kw_res() / kw_return() / kw_to() / kw_true()
+            kw_match() / kw_opt() / kw_res() / kw_return() / kw_to() /
+            kw_true() / kw_type()
 
         // **************
         // VALUE LITERALS
@@ -94,6 +103,9 @@ peg::parser!{
         // labeled value
         rule labeled_value() -> (String, ValueExpr) =
             n: label_name() _ "=" _ v: value_expr() {(n, v)}
+        // optionally kinded type name
+        rule opt_kinded_type_name() -> (String, Option<TypeExpr>) =
+            n: type_name() o: type_annot()? {(n, o)}
         // optionally typed value name
         rule opt_typed_value_name() -> (String, Option<TypeExpr>) =
             n: value_name() o: type_annot()? {(n, o)}
@@ -166,19 +178,20 @@ peg::parser!{
         rule def() -> Definition = type_def() / const_def()
         // definition of a type
         rule type_def() -> Definition =
-            n: type_name() _ ":=" _ t: type_expr() _ ";" {
+            n: opt_kinded_type_name() _ ":=" _ t: type_expr() _ ";" {
                 Definition::Type(TypeDef {
-                    name: n,
-                    expr: t,
+                    name:  n.0,
+                    kexpr: n.1,
+                    texpr: t,
                 })
             }
         // definition of a constant variable
         rule const_def() -> Definition =
-            n: value_name() o: type_annot()? _ ":=" _ v: value_expr() _ ";" {
+            n: opt_typed_value_name() _ ":=" _ v: value_expr() _ ";" {
                 Definition::Const(ConstDef{
-                    name:      n,
-                    type_expr: o,
-                    expr:      v,
+                    name:  n.0,
+                    texpr: n.1,
+                    vexpr: v,
                 })
             }
 
@@ -193,10 +206,17 @@ peg::parser!{
                 TypeExpr::Function(Box::new(t1), Box::new(t2))
             }
             --
-            // declare new universal type variable
-            n: type_name() _ "!" _ t: @ {TypeExpr::Universal(n, Box::new(t))}
-            // declare new existential type variable
-            n: type_name() _ "?" _ t: @ {TypeExpr::Existential(n, Box::new(t))}
+            // declare new universal or existential type variable
+            l: (opt_kinded_type_name() ++ (_ "," _) ) _ b: (univ() / exis()) _ t: @ {
+                let null_kind = TypeExpr::Variable("Type".to_string());
+                TypeExpr::Quantified {
+                    params:  l.into_iter()
+                        .map(|(n, o)| (n, o.unwrap_or(null_kind.clone())))
+                        .collect(),
+                    is_univ: b,
+                    subexpr: Box::new(t),
+                }
+            }
             --
             // inserting universal type parameters
             t: @ _ "{" _ l: type_list() _ "}" {
@@ -209,6 +229,9 @@ peg::parser!{
             t: prod_type() {t}
             t: sum_type() {t}
         }
+        // which variety of quantifier
+        rule univ() -> bool = "!" {true}
+        rule exis() -> bool = "?" {false}
         // keyword type
         rule keyword_type() -> TypeExpr =
             n: $(kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
@@ -241,7 +264,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "!=" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -249,7 +272,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // comparison / shift
@@ -259,7 +282,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "<" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -267,7 +290,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ ">=" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -275,7 +298,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "<=" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -283,7 +306,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // or
@@ -293,7 +316,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // and
@@ -303,7 +326,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // addition and subtraction
@@ -313,7 +336,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "-" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -321,7 +344,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // multiplication, division, and modulo
@@ -331,7 +354,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "/" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -339,7 +362,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "%" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -347,7 +370,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // exponent and logarithm TODO: check associativity
@@ -357,7 +380,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e1: (@) _ "@" _ e2: @ { ValueExpr {
                 variant: ExprVariant::BinaryOp(
@@ -365,7 +388,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // prefix positive, negative, and not
@@ -374,21 +397,21 @@ peg::parser!{
                     UnOpVariant::Pos,
                     Box::new(e),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             "-" _ e: @ { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Neg,
                     Box::new(e),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             "!" _ e: @ { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Not,
                     Box::new(e),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // suffix type annotation / cast, reference, dereference
@@ -397,21 +420,21 @@ peg::parser!{
                     UnOpVariant::Cast,
                     Box::new(e),
                 ),
-                type_expr: Some(t),
+                texpr: Some(t),
             }}
             e: @ _ "&" { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Ref,
                     Box::new(e),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             e: @ _ "$" { ValueExpr {
                 variant: ExprVariant::UnaryOp(
                     UnOpVariant::Deref,
                     Box::new(e),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // function application (right associative) with optional type params
@@ -426,7 +449,7 @@ peg::parser!{
                     Box::new(e1),
                     Box::new(e2),
                 ),
-                type_expr: None,
+                texpr: None,
             }}
             --
             // atoms / non-direct recursion
@@ -446,37 +469,37 @@ peg::parser!{
         rule lit_unit_expr() -> ValueExpr =
             "(" _ ")" { ValueExpr {
                 variant:   ExprVariant::Prod(Vec::new()),
-                type_expr: Some(TypeExpr::Prod(Vec::new())),
+                texpr: Some(TypeExpr::Prod(Vec::new())),
             }}
         // boolean literal
         rule lit_bool_expr() -> ValueExpr =
             b: (literal_true() / literal_false()) { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Bool(b)),
-                type_expr: Some(TypeExpr::Variable("Bool".to_string())),
+                texpr: Some(TypeExpr::Variable("Bool".to_string())),
             }}
         // signed integer literal
         rule lit_int_expr() -> ValueExpr =
             n: literal_integer() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Integer(n)),
-                type_expr: Some(TypeExpr::Variable("S32".to_string())),
+                texpr: Some(TypeExpr::Variable("S32".to_string())),
             }}
         // floating point literal
         rule lit_float_expr() -> ValueExpr =
             x: literal_float() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Float(x)),
-                type_expr: Some(TypeExpr::Variable("F32".to_string())),
+                texpr: Some(TypeExpr::Variable("F32".to_string())),
             }}
         // ascii string literal
         rule lit_ascii_expr() -> ValueExpr =
             s: literal_string() { ValueExpr {
                 variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
-                type_expr: Some(TypeExpr::Variable("Ascii".to_string())),
+                texpr: Some(TypeExpr::Variable("Ascii".to_string())),
             }}
         // value variable
         rule variable_expr() -> ValueExpr =
             n: value_name() { ValueExpr {
                 variant:   ExprVariant::Variable(n),
-                type_expr: None,
+                texpr: None,
             }}
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> ValueExpr =
@@ -494,14 +517,14 @@ peg::parser!{
                     returns:     o2,
                     body:        b,
                 }),
-                type_expr: None,
+                texpr: None,
             }}
         // product expression TODO: allow typed fields?
         rule prod_expr() -> ValueExpr =
             "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
                 ValueExpr {
                     variant:   ExprVariant::Prod(l),
-                    type_expr: None,
+                    texpr: None,
                 }
             }
         // choice expression TODO: allow types to imply position?
@@ -510,7 +533,7 @@ peg::parser!{
             "[" _ e: (labeled_value() / (e: value_expr() {("_0".to_string(), e)})) _ "]" {
                 ValueExpr {
                     variant:   ExprVariant::Sum(e.0, Box::new(e.1)),
-                    type_expr: None,
+                    texpr: None,
                 }
             }
         /* TODO UFCS
@@ -538,7 +561,7 @@ peg::parser!{
                     Some(e) => e,
                     None    => ValueExpr {
                         variant:   ExprVariant::Prod(Vec::new()),
-                        type_expr: Some(TypeExpr::Prod(Vec::new())),
+                        texpr: Some(TypeExpr::Prod(Vec::new())),
                     },
                 }
             )}
@@ -619,28 +642,32 @@ mod tests {
     #[test]
     fn basic_type_def_1() {
         assert_eq!(defs("Foo := Int;"), Ok(
-            Vec::from([Definition::Type(TypeDef{
-                name: "Foo".to_string(),
-                expr: TypeExpr::Variable("Int".to_string()),
+            Vec::from([Definition::Type(TypeDef {
+                name:  "Foo".to_string(),
+                kexpr: None,
+                texpr: TypeExpr::Variable("Int".to_string()),
             })])
         ));
     }
 
     #[test]
     fn medium_type_def_1() {
+        let null_kind = TypeExpr::Variable("Type".to_string());
         assert_eq!(defs("Foo := A! (A, [int: Int, float: Float]);"), Ok(
-            Vec::from([Definition::Type(TypeDef{
-                name: "Foo".to_string(),
-                expr: TypeExpr::Universal(
-                    "A".to_string(),
-                    Box::new(TypeExpr::Prod(Vec::from([
+            Vec::from([Definition::Type(TypeDef {
+                name:  "Foo".to_string(),
+                kexpr: None,
+                texpr: TypeExpr::Quantified {
+                    params:  Vec::from([("A".to_string(), null_kind.clone())]),
+                    is_univ: true,
+                    subexpr: Box::new(TypeExpr::Prod(Vec::from([
                         ("_0".to_string(), TypeExpr::Variable("A".to_string())),
                         ("_1".to_string(), TypeExpr::Sum(Vec::from([
                             ("int".to_string(), TypeExpr::Variable("Int".to_string())),
                             ("float".to_string(), TypeExpr::Variable("Float".to_string())),
                         ]))),
                     ]))),
-                ),
+                },
             })])
         ));
     }
@@ -648,22 +675,22 @@ mod tests {
     #[test]
     fn basic_const_def_1() {
         assert_eq!(defs("foo := bar + false;"), Ok(
-            Vec::from([Definition::Const(ConstDef{
-                name:        "foo".to_string(),
-                type_expr:   None,
-                expr:        ValueExpr {
-                    variant:   ExprVariant::BinaryOp(
+            Vec::from([Definition::Const(ConstDef {
+                name:  "foo".to_string(),
+                texpr: None,
+                vexpr: ValueExpr {
+                    variant: ExprVariant::BinaryOp(
                         BinOpVariant::Add,
-                        Box::new(ValueExpr{
+                        Box::new(ValueExpr {
                             variant:   ExprVariant::Variable("bar".to_string()),
-                            type_expr: None,
+                            texpr: None,
                         }),
-                        Box::new(ValueExpr{
+                        Box::new(ValueExpr {
                             variant:   ExprVariant::Literal(LitVariant::Bool(false)),
-                            type_expr: Some(TypeExpr::Variable("Bool".to_string())),
+                            texpr: Some(TypeExpr::Variable("Bool".to_string())),
                         }),
                     ),
-                    type_expr: None,
+                    texpr:   None,
                 }
             })])
         ));
@@ -676,13 +703,18 @@ mod tests {
 
     #[test]
     fn basic_type_expr_1() {
-        assert_eq!(type_expr("A! Foo{A}"), Ok(
-            TypeExpr::Universal("A".to_string(), Box::new(
-                TypeExpr::TypeParams(
-                    Box::new(TypeExpr::Variable("Foo".to_string())),
-                    Vec::from([TypeExpr::Variable("A".to_string())]),
-                )
-            ))
+        let null_kind = TypeExpr::Variable("Type".to_string());
+        assert_eq!(type_expr("A? Foo{A}"), Ok(
+            TypeExpr::Quantified {
+                params:  Vec::from([("A".to_string(), null_kind.clone())]),
+                is_univ: false,
+                subexpr: Box::new(
+                    TypeExpr::TypeParams(
+                        Box::new(TypeExpr::Variable("Foo".to_string())),
+                        Vec::from([TypeExpr::Variable("A".to_string())]),
+                    )
+                ),
+            }
         ));
     }
 
@@ -690,11 +722,11 @@ mod tests {
     fn basic_value_expr_1() {
         assert_eq!(value_expr("[some = 1 + 1]"), Ok(
             ValueExpr {
-                variant:   ExprVariant::Sum(
+                variant: ExprVariant::Sum(
                     "some".to_string(),
                     Box::new(value_expr("1 + 1").unwrap()),
                 ),
-                type_expr: None,
+                texpr:   None,
             }
         ));
     }
@@ -704,11 +736,11 @@ mod tests {
         // parenthesize as (foo())$
         assert_eq!(value_expr("foo()$"), Ok(
             ValueExpr {
-                variant:   ExprVariant::UnaryOp(
+                variant: ExprVariant::UnaryOp(
                     UnOpVariant::Deref,
                     Box::new(value_expr("foo()").unwrap()),
                 ),
-                type_expr: None,
+                texpr:   None,
             }
         ));
     }
@@ -718,12 +750,12 @@ mod tests {
         // parenthesize as (a * b) - c
         assert_eq!(value_expr("a * b - c"), Ok(
             ValueExpr {
-                variant:   ExprVariant::BinaryOp(
+                variant: ExprVariant::BinaryOp(
                     BinOpVariant::Sub,
                     Box::new(value_expr("a * b").unwrap()),
                     Box::new(value_expr("c").unwrap()),
                 ),
-                type_expr: None,
+                texpr:   None,
             }
         ));
     }
@@ -733,12 +765,12 @@ mod tests {
         // parenthesize as (foo(a)) * (bar(b))
         assert_eq!(value_expr("foo(a) * bar(b)"), Ok(
             ValueExpr {
-                variant:   ExprVariant::BinaryOp(
+                variant: ExprVariant::BinaryOp(
                     BinOpVariant::Mul,
                     Box::new(value_expr("foo(a)").unwrap()),
                     Box::new(value_expr("bar(b)").unwrap()),
                 ),
-                type_expr: None,
+                texpr:   None,
             }
         ));
     }

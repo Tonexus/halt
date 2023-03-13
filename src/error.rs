@@ -31,12 +31,16 @@ pub enum TypeError {
     Undef(String),
     #[error("Type {0} cannot be recursively defined.")]
     RecurDef(String),
+    #[error("Kind {0} is an invalid kind.")]
+    BadKind(String),
+    #[error("Composite type {0} must have kind \"Type\".")]
+    MustNullKind(String),
     // TODO in which def
-    #[error("Type {0} has an inconsistent number of type parameters.")]
-    InconsParams(String),
+    #[error("Kind of type parameter {0} does not match its usage.")]
+    KindMismatch(String),
     // TODO type name, in which def
-    #[error("Type has too many parameters.")]
-    TooManyParams,
+    #[error("Type {0} has too many parameters.")]
+    TooManyParams(String),
     #[error("You are bad and should feel bad.")]
     DefaultErr,
 }

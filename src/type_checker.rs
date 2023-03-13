@@ -29,8 +29,8 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 */
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
-    let mut types: HashMap<&str, &TypeExpr> = HashMap::new();// = misc::get_basic_kword_type_exprs();
-    let mut consts: HashMap<&str, (&Option<TypeExpr>, &ValueExpr)> = HashMap::new();
+    let mut types: HashMap<&str, &TypeDef> = HashMap::new();
+    let mut consts: HashMap<&str, &ConstDef> = HashMap::new();
     // split types, building initial context
     for def in defs.iter() {
         match def {
@@ -38,13 +38,13 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
                 if types.contains_key(t.name.as_str()) {
                     return Err(TypeError::MultiDef(t.name.clone()).into());
                 }
-                types.insert(t.name.as_str(), &t.expr);
+                types.insert(t.name.as_str(), &t);
             }
             Definition::Const(c) => {
                 if consts.contains_key(c.name.as_str()) {
                     return Err(ValueError::MultiDef(c.name.clone()).into());
                 }
-                consts.insert(c.name.as_str(), (&c.type_expr, &c.expr));
+                consts.insert(c.name.as_str(), &c);
             }
         }
     }
@@ -54,7 +54,7 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 }
 
 // TODO add context param if validating locally defined types
-fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError> {
+fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> {
     // graph of type variable dependencies
     let mut dep_graph: Graph<&str, _> = Graph::new();
 
@@ -63,13 +63,13 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
         types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (*s, get_type_deps(t, HashSet::new())),
+            (*s, get_type_deps(&t.texpr, HashSet::new())),
             (*s, dep_graph.add_node(s))
         ))
         .multiunzip();
 
     // map of var to num params, set of undefined vars
-    let (mut type_params, missing_vars): (HashMap<&str, usize>, HashSet<_>) = deps.iter()
+    let (mut type_kinds, missing_vars): (HashMap<&str, TypeExpr>, HashSet<_>) = deps.iter()
         // merge all dependencies
         .fold(HashSet::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
@@ -77,7 +77,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
         .filter(|s| !deps.contains_key(s))
         // split into keyword types (getting param count) and those that are not
         .partition_map(|s| {
-            match get_kword_type_params(s) {
+            match get_kword_type_kind(s) {
                 Some(n) => Left((s, n)),
                 None    => Right(s),
             }
@@ -99,37 +99,139 @@ fn validate_type_defs(types: &HashMap<&str, &TypeExpr>) -> Result<(), TypeError>
     let nodes = toposort(&dep_graph, None)
         .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].to_string()))?;
 
-    // get number of type parameters for each type
+    // get kind of each type
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
-        if let Some(type_expr) = types.get(name) {
-            type_params.insert(name, get_type_params(
+        if let Some(type_def) = types.get(name) {
+            let k_expr = type_kinds.get(type_def.name.as_str());
+            infer_kind(&type_def.texpr, &type_kinds)?;
+            /*type_params.insert(name, get_type_params(
                 type_expr,
                 &type_params,
                 HashSet::new(),
-            )?);
+            )?);*/
         }
     }
     return Ok(());
 }
 
+// gets the number of type parameters for a type
+// assumes all input type parameters take no parameters themselves
+fn infer_kind<'a>(
+    // target type expression
+    texpr:      &'a TypeExpr,
+    // kind known types
+    type_kinds: &HashMap<&str, TypeExpr>,
+) -> Result<TypeExpr, TypeError> {
+    let null_kind = TypeExpr::Variable("Type".to_string());
+    match texpr {
+        // look up variable kind
+        TypeExpr::Variable(s) => {
+            return type_kinds.get(s.as_str()).map(|k| k.clone()).ok_or(TypeError::DefaultErr);
+        },
+
+        // must supply params directly to higher-kinded type
+        TypeExpr::TypeParams(t, l) => {
+            let mut kexpr = infer_kind(t, &type_kinds.clone())?;
+            for t in l.into_iter() {
+                // check if has slots for params
+                match kexpr {
+                    TypeExpr::Function(k1, k2) => {
+                        if *k1 == infer_kind(t, &type_kinds.clone())? {
+                            kexpr = *k2;
+                        } else {
+                            return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
+                        }
+                    },
+                    _ => {
+                        return Err(TypeError::TooManyParams("TODO: FIXME".to_string())); // TODO
+                    },
+                }
+            }
+            return Ok(kexpr);
+        },
+
+        // adds locally-defined type var
+        TypeExpr::Quantified {
+            params:  l,
+            is_univ: b,
+            subexpr: t,
+        } => {
+            let mut new_type_kinds = type_kinds.clone();
+            // insert kinds from parameters (checking validity)
+            for (name, k) in l.iter() {
+                if !valid_kind(k) {
+                    return Err(TypeError::BadKind("TODO: FIXME".to_string())); // TODO
+                }
+                new_type_kinds.insert(name, k.clone());
+            }
+
+            // if universal, add parameter kinds
+            let mut kexpr = infer_kind(t, &new_type_kinds)?;
+            if *b {
+                for (_, k) in l.iter() {
+                    kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
+                }
+            }
+            return Ok(kexpr);
+        },
+
+        // check all subtrees, kind must each be nullary
+        TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
+            for (_, t) in l.into_iter() {
+                if infer_kind(t, &type_kinds.clone())? != null_kind {
+                    return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+                }
+            }
+            return Ok(TypeExpr::Variable("Type".to_string()));
+        },
+
+        // check both subtrees, kind must each be nullary
+        TypeExpr::Function(t1, t2) => {
+            if infer_kind(t1, &type_kinds.clone())? != null_kind {
+                return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+            }
+            if infer_kind(t2, type_kinds)? != null_kind {
+                return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+            }
+            return Ok(TypeExpr::Variable("Type".to_string()));
+        },
+    }
+}
+
+// only allow simple kinds (functions and nullary kind)
+fn valid_kind(kexpr: &TypeExpr) -> bool {
+    let null_kind = TypeExpr::Variable("Type".to_string());
+    if kexpr == &null_kind {
+        return true;
+    }
+    return match kexpr {
+        TypeExpr::Function(k1, k2) => valid_kind(k1) && valid_kind(k2),
+        _ => false,
+    };
+}
+
 // get type params for keyword types that are numeric or otherwise special
-fn get_kword_type_params(type_name: &str) -> Option<usize> {
-    use lazy_static::lazy_static;
+fn get_kword_type_kind(type_name: &str) -> Option<TypeExpr> {
     use regex::{Regex, Captures};
+    use lazy_static::lazy_static;
+    // basic kinds
+    let null_kind = TypeExpr::Variable("Type".to_string());
+    let un   = TypeExpr::Function(Box::new(null_kind.clone()), Box::new(null_kind.clone()));
+    let bin  = TypeExpr::Function(Box::new(null_kind.clone()), Box::new(un.clone()));
     match type_name {
         // integer numerics
-        "USize" => return Some(0),
-        "U32"   => return Some(0),
-        "U16"   => return Some(0),
-        "U8"    => return Some(0),
-        "SSize" => return Some(0),
-        "S32"   => return Some(0),
-        "S16"   => return Some(0),
-        "S8"    => return Some(0),
+        "USize" => return Some(null_kind),
+        "U32"   => return Some(null_kind),
+        "U16"   => return Some(null_kind),
+        "U8"    => return Some(null_kind),
+        "SSize" => return Some(null_kind),
+        "S32"   => return Some(null_kind),
+        "S16"   => return Some(null_kind),
+        "S8"    => return Some(null_kind),
         // floating point number
-        "F32"   => return Some(0),
+        "F32"   => return Some(null_kind),
         // array
-        "Arr"   => return Some(2),
+        "Arr"   => return Some(bin),
         _       => {
             let f = |c: Option<Captures>| c
                 .and_then(|x| x.get(1))
@@ -139,96 +241,21 @@ fn get_kword_type_params(type_name: &str) -> Option<usize> {
                 static ref ENUM: Regex = Regex::new("^N(\\d+)$").unwrap();
             }
             if f(ENUM.captures(type_name)).is_some() {
-                return Some(0);
+                return Some(null_kind);
             }
         },
     }
     return None;
 }
 
-// gets the number of type parameters for a type
-// assumes all input type parameters take no parameters themselves
-fn get_type_params<'a>(
-    // target type expression
-    type_expr:  &'a TypeExpr,
-    // number of params for known types
-    num_params: &HashMap<&str, Option<usize>>,
-    // known local type variables
-    mut vars:   HashSet<&'a str>,
-) -> Result<Option<usize>, TypeError> {
-    match type_expr {
-        TypeExpr::Variable(s) => {
-            // is a locally-defined type var, 0 params
-            if vars.contains(s.as_str()) {
-                return Ok(0);
-            }
-            // not a locally-defined type var, look up params
-            return Ok(*num_params.get(s.as_str()).ok_or(TypeError::DefaultErr)?);
-        },
-
-        // check all parameters exactly
-        TypeExpr::TypeParams(t, l) => {
-            let mut acc = get_type_params(t, num_params, vars.clone())?;
-            for t in l.into_iter() {
-                // has no more slots for params
-                if acc == 0 {
-                    return Err(TypeError::TooManyParams);
-                }
-                // loses 1 slot per param, but might be a param that is itself generic
-                acc = acc - 1 + get_type_params(t, num_params, vars.clone())?;
-            }
-            return Ok(acc);
-        },
-
-        // adds locally-defined type var from parameter
-        TypeExpr::Universal(s, t) => {
-            vars.insert(s);
-            return Ok(get_type_params(t, num_params, vars)? + 1);
-        },
-
-        // adds locally-defined type var
-        TypeExpr::Existential(s, t) => {
-            vars.insert(s);
-            return get_type_params(t, num_params, vars);
-        },
-
-        // must check all subtrees, number of parameters to each must be the same
-        TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
-            if l.len() == 0 {
-                return Ok(0);
-            }
-            let mut one = HashSet::new();
-            for (_, t) in l.into_iter() {
-                one.insert(get_type_params(t, num_params, vars.clone())?);
-            }
-            // param count must be same across branches
-            return one
-                .into_iter()
-                .exactly_one()
-                .map_err(|_| TypeError::InconsParams("Bob".to_string())); // TODO fix
-        },
-
-        // must check all subtrees, number of parameters to each must be the same
-        TypeExpr::Function(t1, t2) => {
-            let n = get_type_params(t1, num_params, vars.clone())?;
-            let m = get_type_params(t2, num_params, vars)?;
-            // number of used params must be same across branches
-            if n != m {
-                return Err(TypeError::InconsParams("Bob".to_string())); // TODO fix
-            }
-            return Ok(n);
-        },
-    }
-}
-
 // gets the type variable dependencies
 fn get_type_deps<'a>(
     // target type expression
-    type_expr: &'a TypeExpr,
+    texpr:    &'a TypeExpr,
     // known local type variables
-    mut vars:  HashSet<&'a str>,
+    mut vars: HashSet<&'a str>,
 ) -> HashSet<&'a str> {
-    match type_expr {
+    match texpr {
         TypeExpr::Variable(s) => {
             // is a locally-defined type var, not a dependency
             return if vars.contains(s.as_str()) {
@@ -239,7 +266,7 @@ fn get_type_deps<'a>(
             };
         },
 
-        // check all parameters exactly
+        // check all parameters and subexpression
         TypeExpr::TypeParams(t, l) => {
             let mut out = get_type_deps(t, vars.clone());
             for type_expr in l.into_iter() {
@@ -248,15 +275,15 @@ fn get_type_deps<'a>(
             return out;
         },
 
-        // adds locally-defined type var from parameter
-        TypeExpr::Universal(s, t) => {
-            vars.insert(s);
-            return get_type_deps(t, vars);
-        },
-
-        // adds locally-defined type var
-        TypeExpr::Existential(s, t) => {
-            vars.insert(s);
+        // adds locally-defined type vars
+        TypeExpr::Quantified {
+            params: l,
+            is_univ: _,
+            subexpr: t,
+        } => {
+            for (s, _) in l.iter() {
+                vars.insert(s);
+            }
             return get_type_deps(t, vars);
         },
 
@@ -311,7 +338,7 @@ mod tests {
         assert!(deps.contains("D"));
     }
 
-    #[test]
+    /*#[test]
     fn basic_type_params_1() {
         assert!(get_type_params(
             &parser::type_expr(
@@ -430,7 +457,7 @@ mod tests {
             &HashMap::from([("A", 1)]),
             HashSet::new()
         ), Err(TypeError::InconsParams(_))));
-    }
+    }*/
 
     #[test]
     fn basic_type_defs_1() {
