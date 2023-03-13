@@ -2,7 +2,7 @@
 
 mod ast;
 mod error;
-mod misc;
+//mod misc;
 mod parser;
 mod type_checker;
 

@@ -241,7 +241,7 @@ peg::parser!{
         rule exis() -> bool = "?" {false}
         // keyword type
         rule keyword_type() -> TypeExpr<'input> =
-            n: $(kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
+            n: $(kw_type() / kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
             kw_res() / kw_arr() / kw_ascii()) { 
             TypeExpr::Variable(n)
         }

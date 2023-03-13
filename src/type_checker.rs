@@ -7,7 +7,6 @@ use petgraph::{Graph, algo::toposort};
 
 use super::ast::*;
 use super::error::{CompileError, TypeError, ValueError};
-use super::misc;
 
 /*#[derive(Debug, PartialEq)]
 struct Context {
@@ -332,42 +331,49 @@ mod tests {
         assert!(deps.contains("D"));
     }
 
-    /*#[test]
-    fn basic_type_params_1() {
-        assert!(get_type_params(
+    #[test]
+    fn basic_type_kind_1() {
+        assert!(infer_kind(
             &parser::type_expr(
                 "([A, B], C -> C)"
             ).unwrap(),
-            &HashMap::from([("A", 0), ("B", 0), ("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 0);
+            &HashMap::from([
+                ("A", KIND_0.clone()),
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ).unwrap() == *KIND_0);
     }
 
     #[test]
-    fn basic_type_params_2() {
-        assert!(get_type_params(
+    fn basic_type_kind_2() {
+        assert!(infer_kind(
             &parser::type_expr(
-                "(A! B, C)"
+                "A! (A, B, C)"
             ).unwrap(),
-            &HashMap::from([("B", 0), ("C", 1)]),
-            HashSet::new()
-        ).unwrap() == 1);
+            &HashMap::from([
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ).unwrap() == *KIND_1);
     }
 
     #[test]
-    fn basic_type_params_3() {
-        assert!(get_type_params(
+    fn basic_type_kind_3() {
+        assert!(infer_kind(
             &parser::type_expr(
-                "(A? A{C}, B)"
+                "(A: Type -> Type? A{C}, B)"
             ).unwrap(),
-            &HashMap::from([("C", 0)]),
-            HashSet::new()
-        ).unwrap() == 0);
+            &HashMap::from([
+                ("B", KIND_0.clone()),
+                ("C", KIND_0.clone()),
+            ]),
+        ).unwrap() == *KIND_0);
     }
 
-    #[test]
+   /* #[test]
     fn medium_type_params_1() {
-        assert!(get_type_params(
+        assert!(infer_kind(
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
