@@ -102,13 +102,16 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     // get kind of each type
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
         if let Some(type_def) = types.get(name) {
-            let k_expr = type_kinds.get(type_def.name.as_str());
-            infer_kind(&type_def.texpr, &type_kinds)?;
-            /*type_params.insert(name, get_type_params(
-                type_expr,
-                &type_params,
-                HashSet::new(),
-            )?);*/
+            let k_inf = infer_kind(&type_def.texpr, &type_kinds)?;
+            if let Some(k_annot) = &type_def.kexpr {
+                if !valid_kind(&k_annot) {
+                    return Err(TypeError::BadKind("TODO: FIXME".to_string())); // TODO
+                }
+                if k_annot != &k_inf {
+                    return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
+                }
+            }
+            type_kinds.insert(name, k_inf);
         }
     }
     return Ok(());
