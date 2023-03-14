@@ -1,6 +1,16 @@
-write a more efficient lexer/parser when readability is less important/language
-specification is more stable
+short term:
+
+deref coerce: &(self: A, deref: A -> B) coerces as &B
+
+allow override of defs/labels with different types
+
+medium term:
 
 write up documentation for features in README
 
 fix up more code samples
+
+long term:
+
+write a more efficient lexer/parser when readability is less important/language
+specification is more stable
