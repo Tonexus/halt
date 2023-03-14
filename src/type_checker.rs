@@ -101,7 +101,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     // get kind of each type
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
         if let Some(type_def) = types.get(name) {
-            let k_inf = infer_kind(&type_def.texpr, &type_kinds)?;
+            let k_inf = infer_kind(&type_def.texpr, &mut type_kinds)?;
             if let Some(k_annot) = &type_def.kexpr {
                 if !valid_kind(&k_annot) {
                     return Err(TypeError::InvalidKind(format!("{}", k_annot)));
@@ -128,7 +128,7 @@ fn infer_kind<'a>(
     // target type expression
     texpr:      &'a TypeExpr,
     // kind known types
-    type_kinds: &HashMap<&str, TypeExpr<'a>>,
+    type_kinds: &mut HashMap<&'a str, TypeExpr<'a>>,
 ) -> Result<TypeExpr<'a>, TypeError> {
     match texpr {
         // look up variable kind
@@ -138,11 +138,11 @@ fn infer_kind<'a>(
 
         // must supply params directly to higher-kinded type
         TypeExpr::TypeParams(t1, l) => {
-            let mut kexpr = infer_kind(t1, &type_kinds.clone())?;
+            let mut kexpr = infer_kind(t1, type_kinds)?;
             for t2 in l.into_iter() {
                 // check if has slots for params
                 if let TypeExpr::Function(k1, k2) = kexpr {
-                    if *k1 == infer_kind(t2, &type_kinds.clone())? {
+                    if *k1 == infer_kind(t2, type_kinds)? {
                         kexpr = *k2;
                     } else {
                         return Err(TypeError::KindMismatch(
@@ -163,20 +163,31 @@ fn infer_kind<'a>(
             is_univ: b,
             subexpr: t,
         } => {
-            let mut new_type_kinds = type_kinds.clone();
+            let mut temp_type_kinds = HashMap::new();
             // insert kinds from parameters (checking validity)
             for (name, k) in l.iter() {
                 if !valid_kind(k) {
                     return Err(TypeError::InvalidKind(format!("{}", k)));
                 }
-                new_type_kinds.insert(name, k.clone());
+                if let Some(old_k) = type_kinds.insert(name, k.clone()) {
+                    temp_type_kinds.insert(name, old_k);
+                }
             }
 
             // if universal, add parameter kinds
-            let mut kexpr = infer_kind(t, &new_type_kinds)?;
+            let mut kexpr = infer_kind(t, type_kinds)?;
             if *b {
                 for (_, k) in l.iter() {
                     kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
+                }
+            }
+
+            // restore old kinds
+            for (name, _) in l.iter() {
+                if let Some(_) = type_kinds.remove(name) {
+                    if let Some(k) = temp_type_kinds.remove(name) {
+                        type_kinds.insert(name, k);
+                    }
                 }
             }
             return Ok(kexpr);
@@ -186,11 +197,11 @@ fn infer_kind<'a>(
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
             // singleton is always same kind as nested
             if let Ok((_, t)) = l.iter().exactly_one() {
-                return infer_kind(t, &type_kinds.clone());
+                return infer_kind(t, type_kinds);
             }
 
             for (_, t) in l.into_iter() {
-                if infer_kind(t, &type_kinds.clone())? != *KIND_0 {
+                if infer_kind(t, type_kinds)? != *KIND_0 {
                     return Err(TypeError::MustNullKind(format!("{}", t)));
                 }
             }
@@ -199,7 +210,7 @@ fn infer_kind<'a>(
 
         // check both subtrees, kind must each be nullary
         TypeExpr::Function(t1, t2) => {
-            if infer_kind(t1, &type_kinds.clone())? != *KIND_0 {
+            if infer_kind(t1, type_kinds)? != *KIND_0 {
                 return Err(TypeError::MustNullKind(format!("{}", t1)));
             }
             if infer_kind(t2, type_kinds)? != *KIND_0 {
@@ -356,7 +367,7 @@ mod tests {
             &parser::type_expr(
                 "([A, B], C -> C)"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_0.clone()),
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
@@ -370,7 +381,7 @@ mod tests {
             &parser::type_expr(
                 "!A . (A, B, C)"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
             ]),
@@ -383,7 +394,7 @@ mod tests {
             &parser::type_expr(
                 "(?A: Type -> Type . A{C}, B)"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
             ]),
@@ -396,7 +407,7 @@ mod tests {
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_2.clone()),
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
@@ -410,7 +421,7 @@ mod tests {
             &parser::type_expr(
                 "!A, B . [A, B]"
             ).unwrap(),
-            &HashMap::new(),
+            &mut HashMap::new(),
         ).unwrap() == *KIND_2);
     }
 
@@ -420,7 +431,7 @@ mod tests {
             &parser::type_expr(
                 "!A: Type -> Type -> Type . A{(!B . !C . [B, C]){D, D}}"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("D", KIND_0.clone()),
             ]),
         ).unwrap() == TypeExpr::Function(
@@ -435,7 +446,7 @@ mod tests {
             &parser::type_expr(
                 "(!A: Type -> Type -> Type . A){B, C}"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("B", KIND_2.clone()),
                 ("C", KIND_0.clone()),
             ]),
@@ -448,7 +459,7 @@ mod tests {
             &parser::type_expr(
                 "(!A . B, C)"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
             ]),
@@ -461,7 +472,7 @@ mod tests {
             &parser::type_expr(
                 "(A, B{C})"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_0.clone()),
                 ("B", KIND_0.clone()),
                 ("C", KIND_0.clone()),
@@ -475,7 +486,7 @@ mod tests {
             &parser::type_expr(
                 "(){A}"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_0.clone()),
             ]),
         ), Err(TypeError::TooManyParams(_))));
@@ -487,7 +498,7 @@ mod tests {
             &parser::type_expr(
                 "[A, ()]"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_1.clone()),
             ]),
         ), Err(TypeError::MustNullKind(_))));
@@ -499,7 +510,7 @@ mod tests {
             &parser::type_expr(
                 "A{B}"
             ).unwrap(),
-            &HashMap::from([
+            &mut HashMap::from([
                 ("A", KIND_1.clone()),
                 ("B", KIND_2.clone()),
             ]),
@@ -512,7 +523,7 @@ mod tests {
             &parser::type_expr(
                 "!A: InvalidKind . A"
             ).unwrap(),
-            &HashMap::new(),
+            &mut HashMap::new(),
         ), Err(TypeError::InvalidKind(_))));
     }
 
