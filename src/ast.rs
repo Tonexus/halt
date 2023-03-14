@@ -53,9 +53,13 @@ pub enum TypeExpr<'a> {
 impl PartialEq for TypeExpr<'_> {
     fn eq(&self, other: &Self) -> bool {
         const FIRST: &str = LABELS[0];
-        let vars = HashMap::new();
+        let mut vars = HashMap::new();
 
-        fn inner(one: &TypeExpr, two: &TypeExpr, vars: &HashMap<&str, &str>) -> bool {
+        fn inner<'a>(
+            one: &TypeExpr<'a>,
+            two: &TypeExpr<'a>,
+            vars: &mut HashMap<&'a str, &'a str>
+        ) -> bool {
             // if singleton, may strip
             match (one, two) {
                 (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
@@ -89,15 +93,46 @@ impl PartialEq for TypeExpr<'_> {
                     params: l2, is_univ: b2, subexpr: t2
                 }) => {
                     // TODO rename vars so new context doesn't intersect old? i.e. don't have to clone...
-                    let mut new_vars = vars.clone();
-                    return (b1 == b2) && l1.iter().zip(l2.iter())
+                    let mut temp_vars = HashMap::new();
+                    // quantifier must be same
+                    if b1 != b2 {
+                        return false;
+                    }
+
+                    for ((s1, k1), (s2, k2)) in l1.iter().zip(l2.iter()) {
+                        // kinds must be same
+                        if k1 != k2 {
+                            return false;
+                        }
                         // add new quantified vars so they correspond to each other
-                        // also check equality of kinds
-                        .fold(true, |a, ((s1, k1), (s2, k2))| {
-                            new_vars.insert(s1, s2);
-                            new_vars.insert(s2, s1);
-                            return a && (k1 == k2);
-                        }) && (b1 == b2) && inner(t1, t2, &new_vars);
+                        // save old vars for later
+                        if let Some(s) = vars.insert(s1, s2) {
+                            temp_vars.insert(s1, s);
+                        }
+                        if let Some(s) = vars.insert(s2, s1) {
+                            temp_vars.insert(s2, s);
+                        }
+                    }
+
+                    // check equality under new quantified vars
+                    if !inner(t1, t2, vars) {
+                        return false;
+                    }
+
+                    // otherwise, restore old vars
+                    for ((s1, _), (s2, _)) in l1.iter().zip(l2.iter()) {
+                        if let Some(_) = vars.remove(s1) {
+                            if let Some(s) = temp_vars.remove(s1) {
+                                vars.insert(s1, s);
+                            }
+                        }
+                        if let Some(_) = vars.remove(s2) {
+                            if let Some(s) = temp_vars.remove(s2) {
+                                vars.insert(s2, s);
+                            }
+                        }
+                    }
+                    return true;
                 }
 
                 // same types and fields
@@ -120,7 +155,7 @@ impl PartialEq for TypeExpr<'_> {
             }
         }
 
-        return inner(self, other, &vars);
+        return inner(self, other, &mut vars);
     }
 }
 
