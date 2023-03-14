@@ -1,6 +1,10 @@
 // ast for halt
 
-use std::{fmt, fmt::{Display, Formatter}, hash::{Hash, Hasher}};
+use std::{
+    fmt, fmt::{Display, Formatter},
+    collections::HashMap,
+    hash::{Hash, Hasher},
+};
 
 use lazy_static::lazy_static;
 
@@ -49,42 +53,74 @@ pub enum TypeExpr<'a> {
 impl PartialEq for TypeExpr<'_> {
     fn eq(&self, other: &Self) -> bool {
         const FIRST: &str = LABELS[0];
-        // if singleton, may strip
-        match (self, other) {
-            (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
-                | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) =>
-                    if let [(FIRST, t2)] = l.as_slice() { return t1 == t2; },
-            _ => {},
+        let vars = HashMap::new();
+
+        fn inner(one: &TypeExpr, two: &TypeExpr, vars: &HashMap<&str, &str>) -> bool {
+            // if singleton, may strip
+            match (one, two) {
+                (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
+                    | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) =>
+                        if let [(FIRST, t2)] = l.as_slice() { return inner(t1, t2, vars); },
+                _ => {},
+            }
+
+            // otherwise, enum and contents must be identical
+            match (one, two) {
+                (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
+                    return match (vars.get(s1), vars.get(s2)) {
+                        // local vars must correspond to each other
+                        (Some(s3), Some(s4)) => (s1 == s4) && (s2 == s3),
+                        // or same global var name
+                        (None,     None)     => s1 == s2,
+                        _                    => false,
+                    };
+                },
+
+                // same subexpr and params
+                (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) => {
+                    return inner(t1, t2, vars) && l1.iter().zip(l2.iter())
+                        .fold(true, |a, (t1, t2)| a && inner(t1, t2, vars));
+                },
+
+                // same quantifier
+                (TypeExpr::Quantified {
+                    params: l1, is_univ: b1, subexpr: t1
+                }, TypeExpr::Quantified {
+                    params: l2, is_univ: b2, subexpr: t2
+                }) => {
+                    // TODO rename vars so new context doesn't intersect old? i.e. don't have to clone...
+                    let mut new_vars = vars.clone();
+                    return (b1 == b2) && l1.iter().zip(l2.iter())
+                        // add new quantified vars so they correspond to each other
+                        // also check equality of kinds
+                        .fold(true, |a, ((s1, k1), (s2, k2))| {
+                            new_vars.insert(s1, s2);
+                            new_vars.insert(s2, s1);
+                            return a && (k1 == k2);
+                        }) && (b1 == b2) && inner(t1, t2, &new_vars);
+                }
+
+                // same types and fields
+                (TypeExpr::Prod(l1), TypeExpr::Prod(l2))
+                    | (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => {
+                        return l1.iter().zip(l2.iter())
+                            .fold(true, |a, ((s1, t1), (s2, t2))|
+                                a && (s1 == s2) && inner(t1, t2, vars)
+                            );
+                    },
+
+                // same params and returns
+                (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) => {
+                    return inner(t1, t3, vars) && inner(t2, t4, vars);
+                }
+
+                _ => {
+                    return false;
+                },
+            }
         }
 
-        // otherwise, enum and contents must be identical
-        return match (self, other) {
-            // same var name
-            (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => s1 == s2,
-
-            // same subexpr and params
-            (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) =>
-                (t1 == t2) && (l1 == l2),
-
-            // same quantifier
-            // TODO may have diff param names but still eq
-            // (also effects var, since might be a local var)
-            (TypeExpr::Quantified {
-                params: l1, is_univ: b1, subexpr: t1
-            }, TypeExpr::Quantified {
-                params: l2, is_univ: b2, subexpr: t2
-            }) => (l1 == l2) && (b1 == b2) && (t1 == t2),
-
-            // same types and fields
-            (TypeExpr::Prod(l1), TypeExpr::Prod(l2))
-                | (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => l1 == l2,
-
-            // same params and returns
-            (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) =>
-                (t1 == t3) && (t2 == t4),
-
-            _ => false,
-        };
+        return inner(self, other, &vars);
     }
 }
 
@@ -114,6 +150,7 @@ impl Hash for TypeExpr<'_> {
             },
 
             // same quantifier TODO may have diff param names but still eq
+            // (also effects var, since might be a local var)
             TypeExpr::Quantified {params: l, is_univ: b, subexpr: t} => {
                 2.hash(state);
                 l.hash(state);
@@ -338,5 +375,43 @@ pub enum Statement<'a> {
 pub struct ToBranch<'a> {
     pub pattern: Vec<ValueExpr<'a>>,
     pub block:   Vec<Statement<'a>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::parser;
+
+    #[test]
+    fn basic_type_equal_1() {
+        let t1 = parser::type_expr(
+            "([A])"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "A"
+        ).unwrap();
+        assert!(t1 == t2);
+    }
+
+    #[test]
+    fn basic_type_equal_2() {
+        let t1 = parser::type_expr(
+            "!A . ([A])"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "!A . A"
+        ).unwrap();
+        assert!(t1 == t2);
+    }
+
+    #[test]
+    fn basic_type_equal_3() {
+        let t1 = parser::type_expr(
+            "!A . A"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "!B . B"
+        ).unwrap();
+        assert!(t1 == t2);
+    }
 }
 
