@@ -30,7 +30,7 @@ pub struct ConstDef<'a> {
     pub vexpr: ValueExpr<'a>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub enum TypeExpr<'a> {
     Variable(&'a str),
     TypeParams(Box<TypeExpr<'a>>, Vec<TypeExpr<'a>>),
@@ -42,6 +42,45 @@ pub enum TypeExpr<'a> {
     Prod(Vec<(&'a str, TypeExpr<'a>)>),
     Sum(Vec<(&'a str, TypeExpr<'a>)>),
     Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
+}
+
+impl PartialEq for TypeExpr<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // if singleton, may strip
+            (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
+                | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) =>
+                    if let [("_0", t2)] = l.as_slice() { return t1 == t2; },
+            _ => {},
+        }
+
+        // otherwise, enum and contents must be identical
+        return match (self, other) {
+            // same var name
+            (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => s1 == s2,
+
+            // same subexpr and params
+            (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) =>
+                (t1 == t2) && (l1 == l2),
+
+            // same quantifier TODO may have diff param names
+            (TypeExpr::Quantified {
+                params: l1, is_univ: b1, subexpr: t1
+            }, TypeExpr::Quantified {
+                params: l2, is_univ: b2, subexpr: t2
+            }) => (l1 == l2) && (b1 == b2) && (t1 == t2),
+
+            // same types and fields
+            (TypeExpr::Prod(l1), TypeExpr::Prod(l2))
+                | (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => l1 == l2,
+
+            // same params and returns
+            (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) =>
+                (t1 == t3) && (t2 == t4),
+
+            _ => false,
+        };
+    }
 }
 
 impl Display for TypeExpr<'_> {

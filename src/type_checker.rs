@@ -217,6 +217,10 @@ fn valid_kind(kexpr: &TypeExpr) -> bool {
     }
     return match kexpr {
         TypeExpr::Function(k1, k2) => valid_kind(k1) && valid_kind(k2),
+        TypeExpr::Prod(l) | TypeExpr::Sum(l) => l.iter()
+            .exactly_one()
+            .map(|(_, k)| valid_kind(k))
+            .unwrap_or(false),
         _ => false,
     };
 }
@@ -530,6 +534,20 @@ mod tests {
     fn basic_type_defs_3() {
         assert!(check_defs(parser::defs(
             "Foo := Arr{Bar, N47}; Bar := Arr{(N1, USize), N13};"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn basic_type_defs_4() {
+        assert!(check_defs(parser::defs(
+            "Foo: [Type] := Arr{N12, N47};"
+        ).unwrap()).is_ok());
+    }
+
+    #[test]
+    fn basic_type_defs_5() {
+        assert!(check_defs(parser::defs(
+            "Foo: (Type -> Type) -> Type := !A: Type -> Type . A{U32};"
         ).unwrap()).is_ok());
     }
 
