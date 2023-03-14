@@ -104,10 +104,13 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
             let k_inf = infer_kind(&type_def.texpr, &type_kinds)?;
             if let Some(k_annot) = &type_def.kexpr {
                 if !valid_kind(&k_annot) {
-                    return Err(TypeError::BadKind("TODO: FIXME".to_string())); // TODO
+                    return Err(TypeError::InvalidKind(format!("{}", k_annot)));
                 }
                 if k_annot != &k_inf {
-                    return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
+                    return Err(TypeError::KindMismatch(
+                        format!("{}", &type_def.texpr),
+                        format!("{}", k_annot),
+                    ));
                 }
             }
             type_kinds.insert(name, k_inf);
@@ -134,18 +137,21 @@ fn infer_kind<'a>(
         },
 
         // must supply params directly to higher-kinded type
-        TypeExpr::TypeParams(t, l) => {
-            let mut kexpr = infer_kind(t, &type_kinds.clone())?;
-            for t in l.into_iter() {
+        TypeExpr::TypeParams(t1, l) => {
+            let mut kexpr = infer_kind(t1, &type_kinds.clone())?;
+            for t2 in l.into_iter() {
                 // check if has slots for params
                 if let TypeExpr::Function(k1, k2) = kexpr {
-                    if *k1 == infer_kind(t, &type_kinds.clone())? {
+                    if *k1 == infer_kind(t2, &type_kinds.clone())? {
                         kexpr = *k2;
                     } else {
-                        return Err(TypeError::KindMismatch("TODO: FIXME".to_string())); // TODO
+                        return Err(TypeError::KindMismatch(
+                            format!("{}", t2),
+                            format!("{}", k1),
+                        ));
                     }
                 } else {
-                    return Err(TypeError::TooManyParams("TODO: FIXME".to_string())); // TODO
+                    return Err(TypeError::TooManyParams(format!("{}", t1)));
                 }
             }
             return Ok(kexpr);
@@ -161,7 +167,7 @@ fn infer_kind<'a>(
             // insert kinds from parameters (checking validity)
             for (name, k) in l.iter() {
                 if !valid_kind(k) {
-                    return Err(TypeError::BadKind("TODO: FIXME".to_string())); // TODO
+                    return Err(TypeError::InvalidKind(format!("{}", k)));
                 }
                 new_type_kinds.insert(name, k.clone());
             }
@@ -185,7 +191,7 @@ fn infer_kind<'a>(
 
             for (_, t) in l.into_iter() {
                 if infer_kind(t, &type_kinds.clone())? != *KIND_0 {
-                    return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+                    return Err(TypeError::MustNullKind(format!("{}", t)));
                 }
             }
             return Ok(KIND_0.clone());
@@ -194,10 +200,10 @@ fn infer_kind<'a>(
         // check both subtrees, kind must each be nullary
         TypeExpr::Function(t1, t2) => {
             if infer_kind(t1, &type_kinds.clone())? != *KIND_0 {
-                return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+                return Err(TypeError::MustNullKind(format!("{}", t1)));
             }
             if infer_kind(t2, type_kinds)? != *KIND_0 {
-                return Err(TypeError::MustNullKind("TODO: FIXME".to_string())); // TODO
+                return Err(TypeError::MustNullKind(format!("{}", t2)));
             }
             return Ok(KIND_0.clone());
         },
@@ -493,17 +499,17 @@ mod tests {
                 ("A", KIND_1.clone()),
                 ("B", KIND_2.clone()),
             ]),
-        ), Err(TypeError::KindMismatch(_))));
+        ), Err(TypeError::KindMismatch(_, _))));
     }
 
     #[test]
     fn basic_type_kind_fail_6() {
         assert!(matches!(infer_kind(
             &parser::type_expr(
-                "!A: BadKind . A"
+                "!A: InvalidKind . A"
             ).unwrap(),
             &HashMap::new(),
-        ), Err(TypeError::BadKind(_))));
+        ), Err(TypeError::InvalidKind(_))));
     }
 
     #[test]

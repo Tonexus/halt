@@ -4,8 +4,8 @@
 
 // Bool
 Boolean := [
-    true_like: (),
-    false_like: (),
+    true:  (),
+    false: (),
 ];
 
 // some of rust's useful basic generics

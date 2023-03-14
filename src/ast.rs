@@ -1,5 +1,7 @@
 // ast for halt
 
+use std::{fmt, fmt::{Display, Formatter}};
+
 use lazy_static::lazy_static;
 
 lazy_static! {
@@ -40,6 +42,93 @@ pub enum TypeExpr<'a> {
     Prod(Vec<(&'a str, TypeExpr<'a>)>),
     Sum(Vec<(&'a str, TypeExpr<'a>)>),
     Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
+}
+
+impl Display for TypeExpr<'_> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            TypeExpr::Variable(s) => {
+                // just print name
+                write!(f, "{}", s)?;
+            },
+
+            TypeExpr::TypeParams(t, l) => {
+                // print subexpression
+                write!(f, "{}{{", *t)?;
+                // print all parameters
+                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, t| a
+                    .and_then(|first| {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}", *t)?;
+                        return Ok(false);
+                    })
+                )?;
+                write!(f, "}}")?;
+            },
+
+            TypeExpr::Quantified {
+                params:  l,
+                is_univ: b,
+                subexpr: t,
+            } => {
+                // print quantifier
+                if *b {
+                    write!(f, "!")?;
+                } else {
+                    write!(f, "?")?;
+                }
+                // print type vars and their kinds
+                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
+                    .and_then(|first| {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", s, k)?;
+                        return Ok(false);
+                    })
+                )?;
+                // write subexpression
+                write!(f, " . {}", *t)?;
+            },
+
+            TypeExpr::Prod(l) => {
+                write!(f, "(")?;
+                // print all contents
+                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
+                    .and_then(|first| {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", s, t)?;
+                        return Ok(false);
+                    })
+                )?;
+                write!(f, ")")?;
+            },
+
+            TypeExpr::Sum(l) => {
+                write!(f, "[")?;
+                // print all contents
+                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
+                    .and_then(|first| {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", s, t)?;
+                        return Ok(false);
+                    })
+                )?;
+                write!(f, "]")?;
+            },
+
+            TypeExpr::Function(t1, t2) => {
+                write!(f, "{} -> {}", *t1, *t2)?;
+            },
+        }
+        return Ok(());
+    }
 }
 
 #[derive(Debug, PartialEq)]
