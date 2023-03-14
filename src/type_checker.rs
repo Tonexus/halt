@@ -62,7 +62,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
         types.iter()
         // get dependencies for each type var and add nodes to graph
         .map(|(s, t)| (
-            (*s, get_type_deps(&t.texpr, HashSet::new())),
+            (*s, get_type_deps(&t.texpr, &mut HashSet::new())),
             (*s, dep_graph.add_node(s))
         ))
         .multiunzip();
@@ -123,6 +123,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
 // ONLY use defs in type kinds (dependencies), kind should not change based on
 // who has this kind as its dependency
 
+// type_kinds SHOULD NOT CHANGE, but mut needed for efficiency
 // gets the kind of a type
 fn infer_kind<'a>(
     // target type expression
@@ -271,12 +272,13 @@ fn get_kword_type_kind(type_name: &str) -> Option<TypeExpr> {
     return None;
 }
 
+// vars SHOULD NOT CHANGE, but mut needed for efficiency
 // gets the type variable dependencies
 fn get_type_deps<'a>(
     // target type expression
-    texpr:    &'a TypeExpr,
+    texpr: &'a TypeExpr,
     // known local type variables
-    mut vars: HashSet<&'a str>,
+    vars:  &mut HashSet<&'a str>,
 ) -> HashSet<&'a str> {
     match texpr {
         TypeExpr::Variable(s) => {
@@ -291,9 +293,9 @@ fn get_type_deps<'a>(
 
         // check all parameters and subexpression
         TypeExpr::TypeParams(t, l) => {
-            let mut out = get_type_deps(t, vars.clone());
+            let mut out = get_type_deps(t, vars);
             for type_expr in l.into_iter() {
-                out.extend(get_type_deps(type_expr, vars.clone()));
+                out.extend(get_type_deps(type_expr, vars));
             }
             return out;
         },
@@ -304,10 +306,19 @@ fn get_type_deps<'a>(
             is_univ: _,
             subexpr: t,
         } => {
+            let mut temp_vars = Vec::new();
             for (s, _) in l.iter() {
-                vars.insert(s);
+                // if s is new in vars, need to remember to remove
+                if vars.insert(s) {
+                    temp_vars.push(s);
+                }
             }
-            return get_type_deps(t, vars);
+            let deps = get_type_deps(t, vars);
+            // remove newly-defined vars
+            for s in temp_vars.into_iter() {
+                vars.remove(s);
+            }
+            return deps;
         },
 
         // must check all subtrees
@@ -317,14 +328,14 @@ fn get_type_deps<'a>(
             }
             let mut out = HashSet::new();
             for (_, t) in l.into_iter() {
-                out.extend(get_type_deps(t, vars.clone()));
+                out.extend(get_type_deps(t, vars));
             }
             return out;
         },
 
         // must check all subtrees
         TypeExpr::Function(t1, t2) => {
-            let mut out = get_type_deps(t1, vars.clone());
+            let mut out = get_type_deps(t1, vars);
             out.extend(get_type_deps(t2, vars));
             return out;
         },
@@ -341,7 +352,7 @@ mod tests {
         let t = parser::type_expr(
             "([A, B], C -> C)"
         ).unwrap();
-        let deps = get_type_deps(&t, HashSet::new());
+        let deps = get_type_deps(&t, &mut HashSet::new());
         for s in ["A", "B", "C"].into_iter() {
             assert!(deps.contains(s));
         }
@@ -353,7 +364,7 @@ mod tests {
         let t = parser::type_expr(
             "!A . ?B . ([A, B], C{A} -> C{D})"
         ).unwrap();
-        let deps = get_type_deps(&t, HashSet::new());
+        let deps = get_type_deps(&t, &mut HashSet::new());
         for s in ["A", "B"].into_iter() {
             assert!(!deps.contains(s));
         }
