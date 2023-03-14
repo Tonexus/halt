@@ -1,0 +1,6 @@
+write a more efficient lexer/parser when readability is less important/language
+specification is more stable
+
+write up documentation for features in README
+
+fix up more code samples
