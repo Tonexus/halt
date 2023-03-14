@@ -63,7 +63,7 @@ impl PartialEq for TypeExpr<'_> {
             (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) =>
                 (t1 == t2) && (l1 == l2),
 
-            // same quantifier TODO may have diff param names
+            // same quantifier TODO may have diff param names but still eq
             (TypeExpr::Quantified {
                 params: l1, is_univ: b1, subexpr: t1
             }, TypeExpr::Quantified {
@@ -82,6 +82,8 @@ impl PartialEq for TypeExpr<'_> {
         };
     }
 }
+
+impl Eq for TypeExpr<'_> {}
 
 impl Display for TypeExpr<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
