@@ -1,7 +1,9 @@
-## Generics
+## Polymorphism
 
-There are two forms of generic types, universally quantified types and
-existentially quantified types.
+There are two forms of polymorphic types, universally quantified types
+(generics) and existentially quantified types (abstract types).
+
+TODO read this over and update...
 
 ### Universal types
 
