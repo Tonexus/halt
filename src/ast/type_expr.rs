@@ -2,7 +2,7 @@
 
 use std::{
     fmt, fmt::{Display, Formatter},
-    collections::HashMap,
+    collections::{HashSet, HashMap},
     hash::{Hash, Hasher},
 };
 
@@ -33,7 +33,6 @@ pub enum TypeExpr<'a> {
 impl PartialEq for TypeExpr<'_> {
     fn eq(&self, other: &Self) -> bool {
         const FIRST: &str = LABELS[0];
-        let mut vars = HashMap::new();
 
         fn inner<'a>(
             one: &TypeExpr<'a>,
@@ -138,7 +137,7 @@ impl PartialEq for TypeExpr<'_> {
             }
         }
 
-        return inner(self, other, &mut vars);
+        return inner(self, other, &mut HashMap::new());
     }
 }
 
@@ -147,56 +146,81 @@ impl Eq for TypeExpr<'_> {}
 impl Hash for TypeExpr<'_> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         const FIRST: &str = LABELS[0];
-        // if singleton, may strip
-        match self {
-            TypeExpr::Prod(l) | TypeExpr::Sum(l)  => {
-                if let [(FIRST, t)] = l.as_slice() {
-                    t.hash(state);
-                    return;
-                }
-            },
-            _ => {},
+
+        fn inner<'a, H: Hasher>(texpr: &'a TypeExpr, state: &mut H, vars: &mut HashSet<&'a str>) {
+            // if singleton, may strip
+            match texpr {
+                TypeExpr::Prod(l) | TypeExpr::Sum(l)  => {
+                    if let [(FIRST, t)] = l.as_slice() {
+                        inner(t, state, vars);
+                        return;
+                    }
+                },
+                _ => {},
+            }
+
+            // otherwise, hash based on nested structure
+            match texpr {
+                TypeExpr::Variable(s) => {
+                    0.hash(state);
+                    if !vars.contains(s) {
+                        s.hash(state);
+                    }
+                },
+
+                TypeExpr::TypeParams(t1, l) => {
+                    1.hash(state);
+                    inner(t1, state, vars);
+                    for t2 in l.iter() {
+                        inner(t2, state, vars);
+                    }
+                },
+
+                // same quantifier TODO may have diff param names but still eq
+                // (also effects var, since might be a local var)
+                TypeExpr::Quantified {params: l, is_univ: b, subexpr: t} => {
+                    2.hash(state);
+                    let mut temp_vars = Vec::new();
+                    for (s, k) in l.iter() {
+                        // if s is new in vars, need to remember to remove
+                        if vars.insert(s) {
+                            temp_vars.push(s);
+                        }
+                        k.hash(state);
+                    }
+                    b.hash(state);
+                    inner(t, state, vars);
+                    for s in temp_vars.into_iter() {
+                        vars.remove(s);
+                    }
+                },
+
+                TypeExpr::Prod(l) => {
+                    3.hash(state);
+                    for (s, t) in l.iter() {
+                        s.hash(state);
+                        inner(t, state, vars);
+                    }
+                },
+
+                TypeExpr::Sum(l) => {
+                    4.hash(state);
+                    for (s, t) in l.iter() {
+                        s.hash(state);
+                        inner(t, state, vars);
+                    }
+                },
+
+                // same params and returns
+                TypeExpr::Function(t1, t2) => {
+                    5.hash(state);
+                    inner(t1, state, vars);
+                    inner(t2, state, vars);
+                },
+            }
         }
 
-        // otherwise, hash based on nested structure
-        match self {
-            TypeExpr::Variable(s) => {
-                0.hash(state);
-                s.hash(state);
-            },
-
-            TypeExpr::TypeParams(t, l) => {
-                1.hash(state);
-                t.hash(state);
-                l.hash(state);
-            },
-
-            // same quantifier TODO may have diff param names but still eq
-            // (also effects var, since might be a local var)
-            TypeExpr::Quantified {params: l, is_univ: b, subexpr: t} => {
-                2.hash(state);
-                l.hash(state);
-                b.hash(state);
-                t.hash(state);
-            },
-
-            TypeExpr::Prod(l) => {
-                3.hash(state);
-                l.hash(state);
-            },
-
-            TypeExpr::Sum(l) => {
-                4.hash(state);
-                l.hash(state);
-            },
-
-            // same params and returns
-            TypeExpr::Function(t1, t2) => {
-                5.hash(state);
-                t1.hash(state);
-                t2.hash(state);
-            },
-        }
+        inner(self, state, &mut HashSet::new());
     }
 }
 
