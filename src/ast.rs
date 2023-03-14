@@ -39,7 +39,7 @@ pub enum TypeExpr<'a> {
     },
     Prod(Vec<(&'a str, TypeExpr<'a>)>),
     Sum(Vec<(&'a str, TypeExpr<'a>)>),
-    Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>), // TODO add closure
+    Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,21 +48,32 @@ pub struct ValueExpr<'a> {
     pub texpr:   Option<TypeExpr<'a>>,
 }
 
-// TODO flesh these out
 // TODO define Place as type of expr variant that may be on LHS of assignment
 #[derive(Debug, PartialEq)]
 pub enum ExprVariant<'a> {
     Variable(&'a str),
-    Literal(LitVariant),
-    BinaryOp(BinOpVariant<'a>, Box<ValueExpr<'a>>, Box<ValueExpr<'a>>),
-    UnaryOp(UnOpVariant<'a>, Box<ValueExpr<'a>>),
+    Literal(LitExpr),
+    BinOp {
+        op:        BinOpExpr<'a>,
+        subexpr_1: Box<ValueExpr<'a>>,
+        subexpr_2: Box<ValueExpr<'a>>,
+    },
+    UnOp {
+        op:      UnOpExpr<'a>,
+        subexpr: Box<ValueExpr<'a>>
+    },
     Prod(Vec<(&'a str, ValueExpr<'a>)>),
     Sum(&'a str, Box<ValueExpr<'a>>),
-    Closure(Closure<'a>),
+    Closure {
+        params:      Vec<(&'a str, Option<TypeExpr<'a>>)>,
+        type_params: Vec<&'a str>,
+        returns:     Option<TypeExpr<'a>>,
+        body:        Vec<Statement<'a>>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
-pub enum LitVariant {
+pub enum LitExpr {
     Bool(bool),
     Integer(i32),
     Float(f32),
@@ -71,7 +82,7 @@ pub enum LitVariant {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum BinOpVariant<'a> {
+pub enum BinOpExpr<'a> {
     Pow,
     Log,
     Mul,
@@ -94,7 +105,7 @@ pub enum BinOpVariant<'a> {
 // TODO add .. UFCS
 // TODO add ~ copy
 #[derive(Debug, PartialEq)]
-pub enum UnOpVariant<'a> {
+pub enum UnOpExpr<'a> {
     Field(&'a str),
     Cast,
     Ref,
@@ -105,52 +116,41 @@ pub enum UnOpVariant<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Closure<'a> {
-    pub params:      Vec<(&'a str, Option<TypeExpr<'a>>)>,
-    pub type_params: Vec<&'a str>,
-    pub returns:     Option<TypeExpr<'a>>,
-    pub body:        Vec<Statement<'a>>,
-}
-
-#[derive(Debug, PartialEq)]
 pub enum Statement<'a> {
     Expr(ValueExpr<'a>),
     Def(Definition<'a>),
-    Let(ValueExpr<'a>, Option<ValueExpr<'a>>),
-    Assign(ValueExpr<'a>, ValueExpr<'a>),
+    Let {
+        place: ValueExpr<'a>,
+        vexpr: Option<ValueExpr<'a>>
+    },
+    Assign {
+        place: ValueExpr<'a>,
+        vexpr: ValueExpr<'a>,
+    },
     Return(ValueExpr<'a>),
     Break,
     Continue,
-    Match(Match<'a>),
-    If(If<'a>),
-    Loop(Loop<'a>),
+    Match {
+        vexpr:       ValueExpr<'a>,
+        to_branches: Vec<ToBranch<'a>>,
+        else_block:  Vec<Statement<'a>>,
+    },
+    If {
+        vexpr:       ValueExpr<'a>,
+        then_block: Vec<Statement<'a>>,
+        else_block: Vec<Statement<'a>>,
+    },
+    Loop {
+        place:  ValueExpr<'a>,
+        iter:   ValueExpr<'a>,
+        block:  Vec<Statement<'a>>,
+    },
     With(Vec<Statement<'a>>),
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Match<'a> {
-    pub value:       ValueExpr<'a>,
-    pub to_branches: Vec<ToBranch<'a>>,
-    pub else_branch: Vec<Statement<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct ToBranch<'a> {
     pub pattern: Vec<ValueExpr<'a>>,
     pub block:   Vec<Statement<'a>>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct If<'a> {
-    pub value:       ValueExpr<'a>,
-    pub then_branch: Vec<Statement<'a>>,
-    pub else_branch: Vec<Statement<'a>>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Loop<'a> {
-    pub value: ValueExpr<'a>,
-    pub iter:  ValueExpr<'a>,
-    pub body:  Vec<Statement<'a>>,
 }
 

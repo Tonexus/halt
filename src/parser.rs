@@ -1,6 +1,7 @@
 // parser for halt. uses peg
 
 use super::ast::*;
+use super::misc::*;
 
 pub use program_parser::*;
 
@@ -36,23 +37,6 @@ peg::parser!{
         // ********
 
         // TODO have true/false/i/inline/yield/enter just be unoverwritable vars?
-        // kinds
-        rule kw_type()     = "Type" !name_char()
-
-        // types
-        rule kw_arr()      = "Arr" !name_char()
-        rule kw_ascii()    = "Ascii" !name_char()
-        rule kw_bool()     = "Bool" !name_char()
-        rule kw_enum()     = "N" (s: $(num()+) {? s.parse::<u32>().map_err(|_| "u32")}) !name_char()
-        rule kw_float()    = "F32" !name_char()
-        rule kw_int()      = ['S' | 'U'] ("8" / "16" / "32" / "Size") !name_char()
-        rule kw_opt()      = "Opt" !name_char()
-        rule kw_res()      = "Res" !name_char()
-
-        // values
-        rule kw_false()    = "false" !name_char()
-        rule kw_i()        = "i" !name_char()
-        rule kw_true()     = "true" !name_char()
 
         // statements
         rule kw_break()    = "break" !name_char()
@@ -65,28 +49,29 @@ peg::parser!{
         rule kw_match()    = "match" !name_char()
         rule kw_return()   = "return" !name_char()
         rule kw_to()       = "to" !name_char()
-        rule kw() = kw_arr() / kw_ascii() / kw_bool() / kw_break() /
-            kw_continue() / kw_else() / kw_enum() / kw_false() / kw_float() /
-            kw_from() / kw_i() / kw_if() / kw_int() / kw_let() / kw_loop() /
-            kw_match() / kw_opt() / kw_res() / kw_return() / kw_to() /
-            kw_true() / kw_type()
 
         // **************
         // VALUE LITERALS
         // **************
 
         // booleans
-        rule literal_true() -> bool = kw_true() { true }
-        rule literal_false() -> bool = kw_false() { false }
+        rule literal_boolean() -> bool = n: value_name() {?
+            match n {
+                // doesn't work with the constants...
+                "true"  => Ok(true),
+                "false" => Ok(false),
+                _       => Err("boolean literal"),
+            }
+        }
         // signed integer
         rule literal_integer() -> i32 =
             s: $("-"? num()+) !(name_char() / ".") {?
-                s.parse::<i32>().map_err(|_| "failed to parse int")
+                s.parse::<i32>().map_err(|_| "integer literal")
             }
         // floating point number
         rule literal_float() -> f32 =
             s: $("-"? num()+ "." num()+) !(name_char() / ".") {?
-                s.parse::<f32>().map_err(|_| "failed to parse float")
+                s.parse::<f32>().map_err(|_| "floating point literal")
             }
         // string TODO fix escape sequences
         rule literal_string() -> &'input str =
@@ -157,21 +142,21 @@ peg::parser!{
         // user defined variable names
         rule value_name() -> &'input str = // TODO later check for leading _ in var name
             quiet!{
-                !kw() n: $(lower() value_char()*) !value_char() {
+                n: $(lower() value_char()*) !value_char() {
                     n
                 }
             } / expected!("value variable name")
         // user defined label names for product fields or sum tags
         rule label_name() -> &'input str =
             quiet!{
-                !kw() n: $(value_char()+) !value_char() {
+                n: $(value_char()+) !value_char() {
                     n
                 }
             } / expected!("label name")
         // user defined type names
         rule type_name() -> &'input str =
             quiet!{
-                !kw() n: $(upper() alphanum()*) !type_char() {
+                n: $(upper() alphanum()*) !type_char() {
                     n
                 }
             } / expected!("type variable name")
@@ -231,7 +216,6 @@ peg::parser!{
             }
             --
             // atoms
-            t: keyword_type() {t}
             t: variable_type() {t}
             t: prod_type() {t}
             t: sum_type() {t}
@@ -239,12 +223,6 @@ peg::parser!{
         // which variety of quantifier
         rule univ() -> bool = "!" {true}
         rule exis() -> bool = "?" {false}
-        // keyword type
-        rule keyword_type() -> TypeExpr<'input> =
-            n: $(kw_type() / kw_bool() / kw_enum() / kw_int() / kw_float() / kw_opt() /
-            kw_res() / kw_arr() / kw_ascii()) { 
-            TypeExpr::Variable(n)
-        }
         // type variable
         rule variable_type() -> TypeExpr<'input> =
             n: type_name() {TypeExpr::Variable(n)}
@@ -266,196 +244,196 @@ peg::parser!{
         pub rule value_expr() -> ValueExpr<'input> = precedence!{
             // equality
             e1: (@) _ "==" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Equ,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Equ,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "!=" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Neq,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Neq,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // comparison / shift
             e1: (@) _ ">" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Gt,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Gt,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "<" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Lt,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Lt,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ ">=" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Gte,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Gte,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "<=" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Lte,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Lte,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // or
             e1: (@) _ "\\/" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Or,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Or,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // and
             e1: (@) _ "/\\" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::And,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::And,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // addition and subtraction
             e1: (@) _ "+" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Add,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Add,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "-" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Sub,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Sub,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // multiplication, division, and modulo
             e1: (@) _ "*" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Mul,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Mul,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "/" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Div,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Div,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "%" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Mod,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Mod,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // exponent and logarithm TODO: check associativity
             e1: (@) _ "^" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Pow,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Pow,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             e1: (@) _ "@" _ e2: @ { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Log,
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Log,
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
             // prefix positive, negative, and not
             "+" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Pos,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Pos,
+                    subexpr: Box::new(e),
+                },
                 texpr: None,
             }}
             "-" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Neg,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Neg,
+                    subexpr: Box::new(e),
+                },
                 texpr: None,
             }}
             "!" _ e: @ { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Not,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Not,
+                    subexpr: Box::new(e),
+                },
                 texpr: None,
             }}
             --
             // suffix type annotation / cast, reference, dereference
             e: @ t: type_annot() { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Cast,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Cast,
+                    subexpr: Box::new(e),
+                },
                 texpr: Some(t),
             }}
             e: @ _ "&" { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Ref,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Ref,
+                    subexpr: Box::new(e),
+                },
                 texpr: None,
             }}
             e: @ _ "$" { ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Deref,
-                    Box::new(e),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Deref,
+                    subexpr: Box::new(e),
+                },
                 texpr: None,
             }}
             --
             // function application (right associative) with optional type params
             e1: @ _ o: ("{" _ l: type_list() _ "}" _ {l})? !['+' | '-'] e2: (@) { ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Call(
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Call(
                         match o {
                             Some(l) => l,
                             None    => Vec::new(),
                         }
                     ),
-                    Box::new(e1),
-                    Box::new(e2),
-                ),
+                    subexpr_1: Box::new(e1),
+                    subexpr_2: Box::new(e2),
+                },
                 texpr: None,
             }}
             --
@@ -475,39 +453,41 @@ peg::parser!{
         // unit literal
         rule lit_unit_expr() -> ValueExpr<'input> =
             "(" _ ")" { ValueExpr {
-                variant:   ExprVariant::Prod(Vec::new()),
-                texpr: Some(TypeExpr::Prod(Vec::new())),
+                variant: ExprVariant::Prod(Vec::new()),
+                texpr:   Some(TypeExpr::Prod(Vec::new())),
             }}
         // boolean literal
         rule lit_bool_expr() -> ValueExpr<'input> =
-            b: (literal_true() / literal_false()) { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Bool(b)),
-                texpr: Some(TypeExpr::Variable("Bool")),
+            b: literal_boolean() { ValueExpr {
+                variant: ExprVariant::Literal(LitExpr::Bool(b)),
+                texpr:   Some(TypeExpr::Variable("Bool")),
             }}
         // signed integer literal
         rule lit_int_expr() -> ValueExpr<'input> =
             n: literal_integer() { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Integer(n)),
-                texpr: Some(TypeExpr::Variable("S32")),
+                variant: ExprVariant::Literal(LitExpr::Integer(n)),
+                texpr:   Some(TypeExpr::Variable("S32")),
             }}
         // floating point literal
         rule lit_float_expr() -> ValueExpr<'input> =
             x: literal_float() { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Float(x)),
-                texpr: Some(TypeExpr::Variable("F32")),
+                variant: ExprVariant::Literal(LitExpr::Float(x)),
+                texpr:   Some(TypeExpr::Variable("F32")),
             }}
         // ascii string literal
         rule lit_ascii_expr() -> ValueExpr<'input> =
             s: literal_string() { ValueExpr {
-                variant:   ExprVariant::Literal(LitVariant::Ascii(s.as_bytes().to_vec())),
-                texpr: Some(TypeExpr::Variable("Ascii")),
+                variant: ExprVariant::Literal(LitExpr::Ascii(s.as_bytes().to_vec())),
+                texpr:   Some(TypeExpr::Variable("Ascii")),
             }}
         // value variable
         rule variable_expr() -> ValueExpr<'input> =
-            n: value_name() { ValueExpr {
-                variant:   ExprVariant::Variable(n),
-                texpr: None,
-            }}
+            n: value_name() {?
+                (!is_kw_value(n) && !is_kw_statement(n)).then_some(ValueExpr {
+                    variant: ExprVariant::Variable(n),
+                    texpr:   None,
+                }).ok_or("value variable")
+            }
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> ValueExpr<'input> =
             o1: ("!" _ l: (type_name() ++ (_ ","  _)) _ "." _ {l})?
@@ -515,7 +495,7 @@ peg::parser!{
             _ "->" _
             o2: (t: type_expr() _ ":" _ {t})?
             b: block() { ValueExpr {
-                variant:   ExprVariant::Closure(Closure {
+                variant:   ExprVariant::Closure {
                     params:      l,
                     type_params: match o1 {
                         Some(l) => l,
@@ -523,15 +503,15 @@ peg::parser!{
                     },
                     returns:     o2,
                     body:        b,
-                }),
+                },
                 texpr: None,
             }}
         // product expression TODO: allow typed fields?
         rule prod_expr() -> ValueExpr<'input> =
             "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
                 ValueExpr {
-                    variant:   ExprVariant::Prod(l),
-                    texpr: None,
+                    variant: ExprVariant::Prod(l),
+                    texpr:   None,
                 }
             }
         // choice expression TODO: allow types to imply position?
@@ -539,8 +519,8 @@ peg::parser!{
         rule sum_expr() -> ValueExpr<'input> =
             "[" _ e: (labeled_value() / (e: value_expr() {("_0", e)})) _ "]" {
                 ValueExpr {
-                    variant:   ExprVariant::Sum(e.0, Box::new(e.1)),
-                    texpr: None,
+                    variant: ExprVariant::Sum(e.0, Box::new(e.1)),
+                    texpr:   None,
                 }
             }
         /* TODO UFCS
@@ -567,8 +547,8 @@ peg::parser!{
                 match o {
                     Some(e) => e,
                     None    => ValueExpr {
-                        variant:   ExprVariant::Prod(Vec::new()),
-                        texpr: Some(TypeExpr::Prod(Vec::new())),
+                        variant: ExprVariant::Prod(Vec::new()),
+                        texpr:   Some(TypeExpr::Prod(Vec::new())),
                     },
                 }
             )}
@@ -584,14 +564,14 @@ peg::parser!{
             e: value_expr() _
             l1: (to_branch() ++ _)
             o: (_ l2: else_branch() {l2})? {
-                Statement::Match(Match {
-                    value:       e,
+                Statement::Match {
+                    vexpr:       e,
                     to_branches: l1,
-                    else_branch: match o {
+                    else_block:  match o {
                         Some(l2) => l2,
                         None     => Vec::new(),
                     },
-                })
+                }
             }
         // if statement
         rule if_stmt() -> Statement<'input> =
@@ -599,19 +579,19 @@ peg::parser!{
             e: value_expr() _
             l1: block()
             o: (_ l2: else_branch() {l2})? {
-                Statement::If(If {
-                    value:       e,
-                    then_branch: l1,
-                    else_branch: match o {
+                Statement::If {
+                    vexpr:      e,
+                    then_block: l1,
+                    else_block: match o {
                         Some(l2) => l2,
                         None     => Vec::new(),
                     }
-                })
+                }
             }
         // to branch of a match statement TODO expr must const TODO sum destructure
         rule to_branch() -> ToBranch<'input> =
             l1: (kw_to() _ e: value_expr() _ {e})+ l2: block() {
-                ToBranch{pattern: l1, block: l2}
+                ToBranch {pattern: l1, block: l2}
             }
         // else branch of match or if
         rule else_branch() -> Vec<Statement<'input>> =
@@ -622,12 +602,12 @@ peg::parser!{
         rule loop_stmt() -> Statement<'input> =
             kw_loop() _ e1: value_expr() _ kw_from() _ e2: value_expr() _
             l: block() {
-                Statement::Loop(Loop{value: e1, iter: e2, body: l})
+                Statement::Loop {place: e1, iter: e2, block: l}
             }
         // let statement TODO LHS destructure
         rule let_stmt() -> Statement<'input> =
             kw_let() _ e1: value_expr() _ o: ("=" _ e2: value_expr() _ ";" {e2})? {
-                Statement::Let(e1, o)
+                Statement::Let {place: e1, vexpr: o}
             }
         // local definition statement
         rule def_stmt() -> Statement<'input> =
@@ -635,7 +615,7 @@ peg::parser!{
         // assignment statement TODO LHS destructure
         rule assign_stmt() -> Statement<'input> =
             e1: value_expr() _ "=" _ e2: value_expr() _ ";" {
-                Statement::Assign(e1, e2)
+                Statement::Assign {place: e1, vexpr: e2}
             }
         // expression statement
         rule expr_stmt() -> Statement<'input> =
@@ -685,17 +665,17 @@ mod tests {
                 name:  "foo",
                 texpr: None,
                 vexpr: ValueExpr {
-                    variant: ExprVariant::BinaryOp(
-                        BinOpVariant::Add,
-                        Box::new(ValueExpr {
+                    variant: ExprVariant::BinOp {
+                        op:        BinOpExpr::Add,
+                        subexpr_1: Box::new(ValueExpr {
                             variant:   ExprVariant::Variable("bar"),
                             texpr: None,
                         }),
-                        Box::new(ValueExpr {
-                            variant:   ExprVariant::Literal(LitVariant::Bool(false)),
+                        subexpr_2: Box::new(ValueExpr {
+                            variant:   ExprVariant::Literal(LitExpr::Bool(false)),
                             texpr: Some(TypeExpr::Variable("Bool")),
                         }),
-                    ),
+                    },
                     texpr:   None,
                 }
             })])
@@ -741,10 +721,10 @@ mod tests {
         // parenthesize as (foo())$
         assert_eq!(value_expr("foo()$"), Ok(
             ValueExpr {
-                variant: ExprVariant::UnaryOp(
-                    UnOpVariant::Deref,
-                    Box::new(value_expr("foo()").unwrap()),
-                ),
+                variant: ExprVariant::UnOp {
+                    op:      UnOpExpr::Deref,
+                    subexpr: Box::new(value_expr("foo()").unwrap()),
+                },
                 texpr:   None,
             }
         ));
@@ -755,11 +735,11 @@ mod tests {
         // parenthesize as (a * b) - c
         assert_eq!(value_expr("a * b - c"), Ok(
             ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Sub,
-                    Box::new(value_expr("a * b").unwrap()),
-                    Box::new(value_expr("c").unwrap()),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Sub,
+                    subexpr_1: Box::new(value_expr("a * b").unwrap()),
+                    subexpr_2: Box::new(value_expr("c").unwrap()),
+                },
                 texpr:   None,
             }
         ));
@@ -770,11 +750,11 @@ mod tests {
         // parenthesize as (foo(a)) * (bar(b))
         assert_eq!(value_expr("foo(a) * bar(b)"), Ok(
             ValueExpr {
-                variant: ExprVariant::BinaryOp(
-                    BinOpVariant::Mul,
-                    Box::new(value_expr("foo(a)").unwrap()),
-                    Box::new(value_expr("bar(b)").unwrap()),
-                ),
+                variant: ExprVariant::BinOp {
+                    op:        BinOpExpr::Mul,
+                    subexpr_1: Box::new(value_expr("foo(a)").unwrap()),
+                    subexpr_2: Box::new(value_expr("bar(b)").unwrap()),
+                },
                 texpr:   None,
             }
         ));
