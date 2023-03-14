@@ -5,8 +5,6 @@ use super::misc::*;
 
 pub use program_parser::*;
 
-const LABELS: [&str; 10] = ["_0", "_1", "_2", "_3", "_4", "_5", "_6", "_7", "_8", "_9"];
-
 peg::parser!{
     grammar program_parser() for str {
         // **************
@@ -57,10 +55,9 @@ peg::parser!{
         // booleans
         rule literal_boolean() -> bool = n: value_name() {?
             match n {
-                // doesn't work with the constants...
-                "true"  => Ok(true),
-                "false" => Ok(false),
-                _       => Err("boolean literal"),
+                KW_TRUE  => Ok(true),
+                KW_FALSE => Ok(false),
+                _        => Err("boolean literal"),
             }
         }
         // signed integer

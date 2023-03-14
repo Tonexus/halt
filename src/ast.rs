@@ -1,8 +1,10 @@
 // ast for halt
 
-use std::{fmt, fmt::{Display, Formatter}};
+use std::{fmt, fmt::{Display, Formatter}, hash::{Hash, Hasher}};
 
 use lazy_static::lazy_static;
+
+use super::misc::*;
 
 lazy_static! {
     pub static ref KIND_0: TypeExpr<'static> = TypeExpr::Variable("Type");
@@ -46,11 +48,12 @@ pub enum TypeExpr<'a> {
 
 impl PartialEq for TypeExpr<'_> {
     fn eq(&self, other: &Self) -> bool {
+        const FIRST: &str = LABELS[0];
+        // if singleton, may strip
         match (self, other) {
-            // if singleton, may strip
             (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
                 | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) =>
-                    if let [("_0", t2)] = l.as_slice() { return t1 == t2; },
+                    if let [(FIRST, t2)] = l.as_slice() { return t1 == t2; },
             _ => {},
         }
 
@@ -84,6 +87,57 @@ impl PartialEq for TypeExpr<'_> {
 }
 
 impl Eq for TypeExpr<'_> {}
+
+impl Hash for TypeExpr<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        const FIRST: &str = LABELS[0];
+        // if singleton, may strip
+        match self {
+            TypeExpr::Prod(l) | TypeExpr::Sum(l)  =>
+                if let [(FIRST, t)] = l.as_slice() { t.hash(state); },
+            _ => {},
+        }
+
+        // otherwise, hash based on nested structure
+        match self {
+            TypeExpr::Variable(s) => {
+                0.hash(state);
+                s.hash(state);
+            },
+
+            TypeExpr::TypeParams(t, l) => {
+                1.hash(state);
+                t.hash(state);
+                l.hash(state);
+            },
+
+            // same quantifier TODO may have diff param names but still eq
+            TypeExpr::Quantified {params: l, is_univ: b, subexpr: t} => {
+                2.hash(state);
+                l.hash(state);
+                b.hash(state);
+                t.hash(state);
+            },
+
+            TypeExpr::Prod(l) => {
+                3.hash(state);
+                l.hash(state);
+            },
+
+            TypeExpr::Sum(l) => {
+                4.hash(state);
+                l.hash(state);
+            },
+
+            // same params and returns
+            TypeExpr::Function(t1, t2) => {
+                5.hash(state);
+                t1.hash(state);
+                t2.hash(state);
+            },
+        }
+    }
+}
 
 impl Display for TypeExpr<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {

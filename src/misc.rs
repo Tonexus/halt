@@ -3,48 +3,51 @@
 use regex::Regex;
 use lazy_static::lazy_static;
 
+// implicit label names
+pub const LABELS: [&str; 10] = ["_0", "_1", "_2", "_3", "_4", "_5", "_6", "_7", "_8", "_9"];
+
 // keywords
 // kinds
-const KW_TYPE: &str = "Type";
+pub const KW_TYPE: &str = "Type";
 
 // types
-const KW_ARR:   &str = "Arr";
-const KW_ASCII: &str = "Ascii";
-const KW_BOOL:  &str = "Bool";
-const KW_F32:   &str = "F32";
-const KW_OPT:   &str = "Opt";
-const KW_RES:   &str = "Res";
-const KW_S8:    &str = "S8";
-const KW_S16:   &str = "S16";
-const KW_S32:   &str = "S32";
-const KW_SSIZE: &str = "SSize";
-const KW_U8:    &str = "U8";
-const KW_U16:   &str = "U16";
-const KW_U32:   &str = "U32";
-const KW_USIZE: &str = "USize";
+pub const KW_ARR:   &str = "Arr";
+pub const KW_ASCII: &str = "Ascii";
+pub const KW_BOOL:  &str = "Bool";
+pub const KW_F32:   &str = "F32";
+pub const KW_OPT:   &str = "Opt";
+pub const KW_RES:   &str = "Res";
+pub const KW_S8:    &str = "S8";
+pub const KW_S16:   &str = "S16";
+pub const KW_S32:   &str = "S32";
+pub const KW_SSIZE: &str = "SSize";
+pub const KW_U8:    &str = "U8";
+pub const KW_U16:   &str = "U16";
+pub const KW_U32:   &str = "U32";
+pub const KW_USIZE: &str = "USize";
 
 // values
-const KW_FAIL:  &str = "fail";
-const KW_FALSE: &str = "false";
-const KW_I:     &str = "i";
-const KW_NONE:  &str = "none";
-const KW_OKAY:  &str = "okay";
-const KW_SOME:  &str = "some";
-const KW_TRUE:  &str = "true";
+pub const KW_FAIL:  &str = "fail";
+pub const KW_FALSE: &str = "false";
+pub const KW_I:     &str = "i";
+pub const KW_NONE:  &str = "none";
+pub const KW_OKAY:  &str = "okay";
+pub const KW_SOME:  &str = "some";
+pub const KW_TRUE:  &str = "true";
 
 // statements
-const KW_BREAK:    &str = "break";
-const KW_CONTINUE: &str = "continue";
-const KW_ELSE:     &str = "else";
-const KW_FOR:      &str = "for";
-const KW_FROM:     &str = "from";
-const KW_IF:       &str = "if";
-const KW_IN:       &str = "in";
-const KW_LET:      &str = "let";
-const KW_LOOP:     &str = "loop";
-const KW_MATCH:    &str = "match";
-const KW_RETURN:   &str = "return";
-const KW_TO:       &str = "to";
+pub const KW_BREAK:    &str = "break";
+pub const KW_CONTINUE: &str = "continue";
+pub const KW_ELSE:     &str = "else";
+pub const KW_FOR:      &str = "for";
+pub const KW_FROM:     &str = "from";
+pub const KW_IF:       &str = "if";
+pub const KW_IN:       &str = "in";
+pub const KW_LET:      &str = "let";
+pub const KW_LOOP:     &str = "loop";
+pub const KW_MATCH:    &str = "match";
+pub const KW_RETURN:   &str = "return";
+pub const KW_TO:       &str = "to";
 
 const KW_TYPES: [&str; 14] = [
     KW_ARR, KW_ASCII, KW_BOOL, KW_F32, KW_OPT, KW_RES, KW_S8, KW_S16, KW_S32,
