@@ -52,6 +52,9 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
     return Ok(());
 }
 
+// TODO have types be &HashMap<(&str, Option<&TypeExpr>), &TypeDef>
+// and input known_kinds be &mut HashMap<(&str, Option<&TypeExpr>), TypeExpr>
+// be mutated to add inferred kinds (only infer if option is None)
 // TODO add context param if validating locally defined types
 fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> {
     // graph of type variable dependencies
@@ -116,6 +119,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
             type_kinds.insert(name, k_inf);
         }
     }
+
     return Ok(());
 }
 
