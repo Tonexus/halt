@@ -1,3 +1,24 @@
+4 special "interfaces":
+
+- `mut`/`rep`
+
+- `ref`
+
+- `cpy`
+
+- `drp(fn)`
+
+Rules:
+
+- `cpy` requires all fields be `cpy`, but does not require `ref` targets to be
+`cpy`
+
+- `cpy` with `ref` requires `ref` target to have no `rep`
+
+- `drp` requires at least one `ref` with a target that has at least one `rep`
+
+TODO: OLD
+
 Halt programs should have good, and generally deterministic performance. To that
 end, there is no out-of-the-box garbage collector. However, to ensure safety and
 avoid undefined behavior, the Halt compiler uses borrow checking and lifetimes

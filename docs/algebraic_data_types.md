@@ -46,7 +46,7 @@ Foo := (label_1: Type1, label_2: Type2, label_3: Type3);
 // implicitly labeled
 Bar := (Type1, Type2, Type3);
 
-// Bar is equivalent to (_1: Type1, _2: Type2, _3: Type3)
+// Bar is equivalent to (_0: Type1, _1: Type2, _2: Type3)
 
 // instantiation
 let foo: Foo = (label_1 = value_1, label_2 = value_2, label_3 = value_3);
@@ -107,19 +107,22 @@ Foo := [label_1: Type1, label_2: Type2, label_3: Type3]
 // implicitly labeled
 Bar := [Type1, Type2, Type3]
 
-// Bar is equivalent to [_1: Type1, _2: Type2, _3: Type3]
+// Bar is equivalent to [_0: Type1, _1: Type2, _2: Type3]
 
 // instantiation for value: Type2
 let foo: Foo = [label_2 = value];
 let bar: Bar = [value];
 // note that if types are redundant, the explicit form must be used!
-// bar = [_2 = value];
+// bar = [_1 = value];
 ```
 
-### Type equivalencies and automatic type conversions
+### Type equivalencies and automatic type coercions
 
 Generally, types with the same structure (same labels for the same types) are
 equivalent, and implicitly labeled types may be treated as explicitly labeled.
+
+TODO should include Uniques?
+
 However, the one exception is via the special `Unique` generic type.
 Specifically, a type `Unique{T}` will have the same composition of types as the
 original type `T`, but will be treated as a distinct type. Furthermore, unlike
@@ -129,29 +132,30 @@ a singleton struct from `T` having a program-unique label.)
 
 #### Enums and keyword equivalencies
 
-All keyword types are simply unique enums with additional functionality provided
-by interfaces (TODO page on this). For instance, `N2`, defined as `[(), ()]` is
+Most keyword types are simply enums with additional functionality provided by
+interfaces (TODO page on this). For instance, `N2`, defined as `[(), ()]` is
 equivalent to `Bool`, and `N256` is equivalent to `U8` and `S8`.
 
 #### Singleton canonicalization
 
-Any implicitly labeled singleton type is equivalent to its constituent type. In
-other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and `[_1: A]` are all
-equivalent, and whose fields may be accessed as type `A`. An interesting
-implication of canonicalization is that every function is an arity-1 function
-with its sole parameter being a tuple. Furthermore, parentheses and square
-brackets can both be naturally used for both grouping expressions and for
-constructing product and sum values, as the expression `[10 + (5 + 5)]` is of
-type `[(U32)]`, which is equivalent to `U32`.
+Any implicitly labeled singleton type can be coerced to and from its constituent
+type. In other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and `[_1: A]` may
+all be coerced to each other. In particular, field access uses the "canonical"
+version of the type with all singleton compositions stripped away. Another
+interesting implication of canonicalization is that every function may be
+treated as an arity-1 function with its sole parameter being a tuple.
+Furthermore, parentheses and square brackets can both be naturally used for both
+grouping expressions and for constructing product and sum values, as the
+singleton tuple `(5 + 5)` has type `(U32)`, but may be coerced to `U32`.
 
-#### Automatic conversion of sums
+#### Sum coercions
 
 Canonicalization may seem to contradict the instatiation of implicitly labelled
 sums. In the example with sums, `[value]` must have type `[Type2]`, which is
 equivalent to `Type2`, but it is assigned to a variable of type
-`[Type1, Type2, ...]`. In Halt, a choice may be automatically converted to a
+`[Type1, Type2, ...]`. In Halt, a choice may be automatically coerced to a
 choice with additional summands as long as the source labels and types match a
 subset of the destination labels and types. Implicitly labeled sum values
-without redundant types may be converted to an implicitly labeled sum of the
-same types but with a different implicit label order.
+without redundant types may be coerced to an implicitly labeled sum of the same
+types but with a different implicit label order.
 

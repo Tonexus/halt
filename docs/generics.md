@@ -125,3 +125,6 @@ func: (a: Abstr{Interface}) -> U32 := \{
     let z: U32 = func(((), other)) // z holds 0
 ```
 
+Example: if all elements of a tuple support some interface, one can be treated
+as an array of abastract types.
+

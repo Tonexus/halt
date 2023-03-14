@@ -106,3 +106,198 @@ def fn foo(a: U32) -> io::OUTPUT; FOREVER = { // no return effect, indicated by 
 // meta directives whether to inline an instance of a function call (at call site) or also all instances of a function (at definition)
 // meta directives unroll loop
 // meta directives elide bounds check, elide matching on sum type, need proofs?
+
+/********************** Sum / Product mapping syntax ************************/
+
+// product of functions on tuple
+(foo_fn, bar_fn, baz_fn) (foo, bar, baz);
+
+...
+
+// product of functions on product type
+(foo = foo_fn, bar = bar_fn, baz = baz_fn) (foo: 1, bar: 2, baz: 3);
+
+...
+
+// sum of functions on sum type (must be exhaustive)
+[foo = foo_fn, bar = bar_fn, baz = baz_fn] [foo: 1]: [foo: U8, bar: U8, baz: U8];
+
+...
+
+// product of expressions on product type
+(one = x -> foo = x + 1, two = x -> bar = x + 2, three = x -> baz = x + 3) (one = 1, two = 1, three = 1); // yields (foo = 2, bar = 3, baz = 4)
+
+...
+
+// sum of expressions (must be exhaustive)
+[one = x -> foo = x + 1, two = x -> bar = x + 2, three = x -> baz = x + 3] [one = 5]: [one: U8, two: U8, three: U8]; // yields [foo = 6]: [foo: U8, bar: U8, baz: U8]
+
+...
+
+// match expression via sum of expressions (must be exhaustive)
+[foo = x -> _ = x + 3, bar -> _ = 0, baz = x -> _ = x.len()] [baz = "Hello"]: [foo: U8, bar, baz: String]; // yields 5
+
+/********************** Interface examples ************************/
+
+StrRep{A!} := A! -> Str;
+
+as_str := (in: (T?, StrRep{T?})) -> Str: {
+    let (val, method) = in;
+    return method(val);
+}
+
+/* alternate
+as_str := (in: (T?, T? -> Str)) -> Str: {
+    let (val, method) = in;
+    return method(val);
+}
+*/
+
+OutStream{A!, B!} := (A!, B!) -> ();
+
+put_str 
+
+InChannel{A!} := (mut E?, (E?, A!) -> Result{(), ()});
+OutChannel{A!} := (mut E?, E? -> Result{A!, ()});
+
+Channel{A!} := (mut InChannel{A!}, mut OutChannel{A!})
+
+Numeric{N!} := (
+    from_uint: UInt -> N!,
+    add: (N!, N!) -> N!,
+    sub: (N!, N!) -> N!,
+    mul: (N!, N!) -> N!,
+    div: (N!, N!) -> N!,
+)
+
+CircBuf{A!, N!} := (
+    arr: mut Arr{Option{A!}, N!},
+    r_head: mut N!,
+    w_head: mut N!,
+)
+
+write{A!} := (buf: mut CircBuf{A!, N?}, num_if: Numeric{N?}, val: A!) -> Result{(), ()}: {
+    match buf.arr[buf.w_head]$ {
+        to some {
+            return [fail: ()];
+        }
+        to none {
+            buf.arr[buf.w_head]$ = [some: val];
+            with num_if {
+                w_head = w_head + 1;
+            }
+            return [okay: ()];
+        }
+    }
+}
+
+read{A!} := (buf: mut CircBuf{A!, N?}, num_if: Numeric{N?}) -> Result{A!, ()}: {
+    match buf.arr[buf.r_head]$ {
+        to none {
+            return [fail: ()];
+        }
+        to some = out {
+            buf.arr[buf.r_head]$ = [none: ()];
+            with num_if {
+                r_head = r_head + 1;
+            }
+            return [okay: out];
+        }
+    }
+}
+
+make_circ_buf{A!} := (num_if: Numeric{N?}) -> mut CircBuf{A!, N?}: {
+    with num_if {
+        return (
+            arr = map((), () -> {return [none: ()]}),
+            r_head = 0,
+            w_head = 0,
+        );
+    }
+}
+
+Ref{A!} := (E?, E? -> A!);
+Deref{A!} := (E?, A! -> E?);
+
+Set{A!} := (E?, (E?, A!) -> E?);
+Get{A!} := (E?, E? -> A!);
+
+"with" takes any product of functions and uses field names (with arbitrary underscore suffixes) to (re)define symbolic operations:
+    - "into" as tuple of functions (automatic type cast)
+    - "from" as tuple of functions (automatic type cast)
+    - "call" as tuple of functions (function call syntax)
+    - "add" (+)
+    - "sub" (-)
+    - "mul" (*)
+    - "div" (/)
+    - "mod" (%)
+    - "pow" (^)
+    - "log" (@)
+    - "eq" (==)
+    - "neq" (!=)
+    - "gt" (>)
+    - "lt" (<)
+    - "not" (!), prefix
+    - "and" (/\)
+    - "or" (\/)
+    - "norm" (|...|) prefix + suffix
+
+"override" or "overload" instead of "with"?
+
+/********************** Composing interfaces and match syntax ************************/
+
+Iterator{U!, A!} := (
+    next: mut U! -> Option{A!},
+    size: U! -> USize,
+)
+
+TwoIterators{A!} := (
+    iter_1: ref mut E?,
+    iter_1_if: Iterator{E?, A!},
+    iter_2: ref mut F?,
+    iter_2_if: Iterator{F?, A!},
+)
+
+two_iter_if: Iterator{TwoIterators{A!}, A!} := (
+    next = (it: mut TwoIterators) -> Option{A!}: {
+        match it.iter_1_if.next(it.iter_1$) {
+            to some = val {
+                return [some = val];
+            }
+            to none {
+                return it.iter_2_if.next(it.iter_2$);
+            }
+        }
+    },
+    size = (it: TwoIterators) -> USize: {
+        return it.iter_1_if.size(it.iter_1$) + it.iter_2_if.size(it.iter_2$);
+    }
+)
+
+dummy := () -> {
+    let arr_1: mut Arr{U32, 10} = array_all(0);
+    let arr_2: mut Arr{U32, 10} = arr_1;
+    let iter: TwoIterators(U32) = (iter_1 = arr_1, iter_1_if = array_iter_if, iter_2 = arr_2, iter_2_if = array_iter_if);
+    iter.(iter_1, iter_1_if) = (iter_1 = iter, iter_1_if = two_iter_if); // should be illegal to move into self (even with references, cannot borrow self to put inside self)
+}
+
+foo := (io: IOStream) -> {
+    let char = 'a';                                 // implicitly 'a' = [97 = ()]: [0: (), 1: (), ..., 255: ()]
+    match char to 'a' {
+        print(io, "we got an a");
+    } to 'd' \/ 'p' {
+        print(io, "we got a d or p");
+    } else {
+        print(io, "we got something else");
+    }
+    
+    let choice = [foo = 32]: [foo: U32, bar: Ascii, baz: Ascii];
+    match choice to foo = val {                     // implicitly [foo = val]
+        print(io, ("we got an int ", val));
+    } to bar = val \/ baz = val {
+        print(io, ("we got a string ", val));
+    }
+    return;
+}
+
+// if foo { ... } is equivalent to match foo to true { ... }
