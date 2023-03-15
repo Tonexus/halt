@@ -104,7 +104,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     // get kind of each type
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
         if let Some(type_def) = types.get(name) {
-            let k_inf = infer_kind(&type_def.texpr, &mut type_kinds)?;
+            let k_inf = check_kind(&type_def.texpr, &mut type_kinds)?;
             if let Some(k_annot) = &type_def.kexpr {
                 if !valid_kind(&k_annot) {
                     return Err(TypeError::InvalidKind(format!("{}", k_annot)));
@@ -129,7 +129,7 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
 
 // type_kinds SHOULD NOT CHANGE, but mut needed for efficiency
 // gets the kind of a type
-fn infer_kind<'a>(
+fn check_kind<'a>(
     // target type expression
     texpr:      &'a TypeExpr,
     // kind known types
@@ -143,11 +143,11 @@ fn infer_kind<'a>(
 
         // must supply params directly to higher-kinded type
         TypeExpr::TypeParams(t1, l) => {
-            let mut kexpr = infer_kind(t1, type_kinds)?;
+            let mut kexpr = check_kind(t1, type_kinds)?;
             for t2 in l.into_iter() {
                 // check if has slots for params
                 if let TypeExpr::Function(k1, k2) = kexpr {
-                    if *k1 == infer_kind(t2, type_kinds)? {
+                    if *k1 == check_kind(t2, type_kinds)? {
                         kexpr = *k2;
                     } else {
                         return Err(TypeError::KindMismatch(
@@ -180,7 +180,7 @@ fn infer_kind<'a>(
             }
 
             // if universal, add parameter kinds
-            let mut kexpr = infer_kind(t, type_kinds)?;
+            let mut kexpr = check_kind(t, type_kinds)?;
             if *b {
                 for (_, k) in l.iter() {
                     kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
@@ -202,11 +202,11 @@ fn infer_kind<'a>(
         TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
             // singleton is always same kind as nested
             if let Ok((_, t)) = l.iter().exactly_one() {
-                return infer_kind(t, type_kinds);
+                return check_kind(t, type_kinds);
             }
 
             for (_, t) in l.into_iter() {
-                if infer_kind(t, type_kinds)? != *KIND_0 {
+                if check_kind(t, type_kinds)? != *KIND_0 {
                     return Err(TypeError::MustNullKind(format!("{}", t)));
                 }
             }
@@ -215,10 +215,10 @@ fn infer_kind<'a>(
 
         // check both subtrees, kind must each be nullary
         TypeExpr::Function(t1, t2) => {
-            if infer_kind(t1, type_kinds)? != *KIND_0 {
+            if check_kind(t1, type_kinds)? != *KIND_0 {
                 return Err(TypeError::MustNullKind(format!("{}", t1)));
             }
-            if infer_kind(t2, type_kinds)? != *KIND_0 {
+            if check_kind(t2, type_kinds)? != *KIND_0 {
                 return Err(TypeError::MustNullKind(format!("{}", t2)));
             }
             return Ok(KIND_0.clone());
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_1() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "([A, B], C -> C)"
             ).unwrap(),
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_2() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "!A . (A, B, C)"
             ).unwrap(),
@@ -405,7 +405,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_3() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "(?A: Type -> Type . A{C}, B)"
             ).unwrap(),
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_4() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "A{B, C}"
             ).unwrap(),
@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn medium_type_kind_1() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "!A, B . [A, B]"
             ).unwrap(),
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn medium_type_kind_2() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "!A: Type -> Type -> Type . A{(!B . !C . [B, C]){D, D}}"
             ).unwrap(),
@@ -457,7 +457,7 @@ mod tests {
 
     #[test]
     fn medium_type_kind_3() {
-        assert!(infer_kind(
+        assert!(check_kind(
             &parser::type_expr(
                 "(!A: Type -> Type -> Type . A){B, C}"
             ).unwrap(),
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_1() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "(!A . B, C)"
             ).unwrap(),
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_2() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "(A, B{C})"
             ).unwrap(),
@@ -497,7 +497,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_3() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "(){A}"
             ).unwrap(),
@@ -509,7 +509,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_4() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "[A, ()]"
             ).unwrap(),
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_5() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "A{B}"
             ).unwrap(),
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn basic_type_kind_fail_6() {
-        assert!(matches!(infer_kind(
+        assert!(matches!(check_kind(
             &parser::type_expr(
                 "!A: InvalidKind . A"
             ).unwrap(),
