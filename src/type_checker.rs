@@ -28,35 +28,35 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 */
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
-    let mut types: HashMap<&str, &TypeDef> = HashMap::new();
-    let mut consts: HashMap<&str, &ConstDef> = HashMap::new();
+    let mut types: HashMap<&str, TypeDef> = HashMap::new();
+    let mut consts: HashMap<&str, ConstDef> = HashMap::new();
     // split types, building initial context
-    for def in defs.iter() {
+    for def in defs.into_iter() {
         match def {
             Definition::Type(t) => {
                 if types.contains_key(t.name) {
                     return Err(TypeError::MultiDef(t.name.to_string()).into());
                 }
-                types.insert(t.name, &t);
+                types.insert(t.name, t);
             }
             Definition::Const(c) => {
                 if consts.contains_key(c.name) {
                     return Err(ValueError::MultiDef(c.name.to_string()).into());
                 }
-                consts.insert(c.name, &c);
+                consts.insert(c.name, c);
             }
         }
     }
     // validate types
-    validate_type_defs(&types)?;
+    let type_kinds = validate_type_defs(&types)?;
     return Ok(());
 }
 
-// TODO have types be &HashMap<(&str, Option<&TypeExpr>), &TypeDef>
-// and input known_kinds be &mut HashMap<(&str, Option<&TypeExpr>), TypeExpr>
-// be mutated to add inferred kinds (only infer if option is None)
+// TODO For inference, input and output &mut HashMap<&str, HashMap<Option<TypeExpr>, Option<TypeExpr>>>
+//                           mapping of string + kind annot to type expr (allows kw types not defined explicitly)
+// be mutated to add inferred kinds (only infer if kind option is None)
 // TODO add context param if validating locally defined types
-fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> {
+fn validate_type_defs<'a>(types: &'a HashMap<&'a str, TypeDef<'a>>) -> Result<HashMap<&'a str, (TypeExpr<'a>, TypeExpr<'a>)>, TypeError> {
     // graph of type variable dependencies
     let mut dep_graph: Graph<&str, _> = Graph::new();
 
@@ -120,7 +120,14 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
         }
     }
 
-    return Ok(());
+    let mut out: HashMap<&'a str, (TypeExpr, TypeExpr)> = HashMap::new();
+    for (name, type_def) in types.iter() {
+        if let Some(k) = type_kinds.remove(name) {
+            out.insert(name, (k, type_def.texpr.clone()));
+        }
+    }
+
+    return Ok(out);
 }
 
 // TODO allow inference of kinds of quantified variables (unify kind annotation)
