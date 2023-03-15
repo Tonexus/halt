@@ -25,8 +25,10 @@ pub enum CompileError {
 
 #[derive(Error, Debug)]
 pub enum TypeError {
-    #[error("Type \"{0}\" has multiple definitions.")]
+    #[error("Type \"{0}\" cannot have multiple definitions with the same kind.")]
     MultiDef(String),
+    #[error("Type \"{0}\" cannot have multiple definitions with inferred kind.")]
+    MultiInfer(String),
     #[error("Type \"{0}\" is undefined.")]
     Undef(String),
     #[error("Type \"{0}\" cannot be recursively defined.")]

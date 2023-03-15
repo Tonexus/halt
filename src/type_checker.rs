@@ -28,16 +28,28 @@ fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(
 */
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
-    let mut types: HashMap<&str, &TypeDef> = HashMap::new();
+    // map type name -> annotated kind -> type
+    let mut types: HashMap<&str, HashMap<Option<TypeExpr>, &TypeExpr>> = HashMap::new();
     let mut consts: HashMap<&str, &ConstDef> = HashMap::new();
     // split types, building initial context
     for def in defs.iter() {
         match def {
             Definition::Type(t) => {
-                if types.contains_key(t.name) {
-                    return Err(TypeError::MultiDef(t.name.to_string()).into());
+                // insert type definition
+                if let Some(h) = types.get_mut(t.name) {
+                    // if hashmap already exsts, need to worry about multiple same def
+                    if let Some(_) = h.insert(t.kexpr.clone(), &t.texpr) {
+                        if t.kexpr.is_none() {
+                            return Err(TypeError::MultiInfer(t.name.to_string()).into());
+                        } else {
+                            return Err(TypeError::MultiDef(t.name.to_string()).into());
+                        }
+                    }
+                } else {
+                    types.insert(t.name, HashMap::from([
+                        (t.kexpr.clone(), &t.texpr)
+                    ]));
                 }
-                types.insert(t.name, &t);
             }
             Definition::Const(c) => {
                 if consts.contains_key(c.name) {
@@ -52,26 +64,29 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
     return Ok(());
 }
 
-// TODO have types be &HashMap<(&str, Option<&TypeExpr>), &TypeDef>
-// and input known_kinds be &mut HashMap<(&str, Option<&TypeExpr>), TypeExpr>
-// be mutated to add inferred kinds (only infer if option is None)
+// TODO have input types be &HashMap<&str, HashMap<Option<TypeExpr>, &TypeExpr>>
+// output &HashMap<&str, HashMap<TypeExpr, &TypeExpr>> map str -> kind -> type
 // TODO add context param if validating locally defined types
-fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> {
+fn validate_type_defs(types: &HashMap<&str, HashMap<Option<TypeExpr>, &TypeExpr>>) -> Result<(), TypeError> {
     // graph of type variable dependencies
     let mut dep_graph: Graph<&str, _> = Graph::new();
 
     // map of var to dependencies, map of var to indices into graph
-    let (deps, node_idx): (HashMap<&str, _>, HashMap<&str, _>) =
-        types.iter()
-        // get dependencies for each type var and add nodes to graph
-        .map(|(s, t)| (
-            (*s, get_type_deps(&t.texpr, &mut HashSet::new())),
-            (*s, dep_graph.add_node(s))
-        ))
-        .multiunzip();
+    let mut deps:  HashMap<&str, HashMap<&Option<TypeExpr>, HashSet<&str>>> = HashMap::new();
+    let mut nodes: HashMap<&str, _> = HashMap::new();
 
-    // map of var to num params, set of undefined vars
+    for (s, h) in types.iter() {
+        // get dependencies for each type var and kind annotation
+        let kdeps = h.iter().map(|(k, t)| (k, get_type_deps(t, &mut HashSet::new()))).collect();
+        deps.insert(s, kdeps);
+        // add nodes to graph
+        nodes.insert(s, dep_graph.add_node(s));
+    }
+
+    // map of type var and annotated kind to kind, set of undefined vars
     let (mut type_kinds, missing_vars): (HashMap<&str, TypeExpr>, HashSet<_>) = deps.iter()
+        // take dependencies from all type names and kind annotations
+        .flat_map(|(_, h)| h.iter())
         // merge all dependencies
         .fold(HashSet::new(), |mut a, (_, b)| {a.extend(b); return a})
         .into_iter()
@@ -91,8 +106,10 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     }
 
     // add dependency graph edges
-    for (s1, s2) in deps.iter().flat_map(|(s, m)| iter::repeat(s).zip(m.iter())) {
-        if let (Some(j), Some(k)) = (node_idx.get(s1), node_idx.get(s2)) {
+    for (s1, s2) in deps.iter()
+        .flat_map(|(s, h)| iter::repeat(s).zip(h.iter()))
+        .flat_map(|(s, (_, h))| iter::repeat(s).zip(h.iter())) {
+        if let (Some(j), Some(k)) = (nodes.get(s1), nodes.get(s2)) {
             dep_graph.add_edge(*k, *j, ());
         }
     }
@@ -101,22 +118,26 @@ fn validate_type_defs(types: &HashMap<&str, &TypeDef>) -> Result<(), TypeError> 
     let nodes = toposort(&dep_graph, None)
         .map_err(|e| TypeError::RecurDef(dep_graph[e.node_id()].to_string()))?;
 
-    // get kind of each type
+    // get actual kind of each type var and kind annotation
     for name in nodes.into_iter().map(|x| dep_graph[x]) {
-        if let Some(type_def) = types.get(name) {
-            let k_inf = infer_kind(&type_def.texpr, &mut type_kinds)?;
-            if let Some(k_annot) = &type_def.kexpr {
-                if !valid_kind(&k_annot) {
-                    return Err(TypeError::InvalidKind(format!("{}", k_annot)));
+        if let Some(h) = types.get(name) {
+            for (kexpr, texpr) in h.iter() {
+                // infer kind from type definition and known kinds
+                let k_inf = infer_kind(&texpr, &mut type_kinds)?;
+                // check if matches annotated kind
+                if let Some(k_annot) = kexpr {
+                    if !valid_kind(&k_annot) {
+                        return Err(TypeError::InvalidKind(format!("{}", k_annot)));
+                    }
+                    if k_annot != &k_inf {
+                        return Err(TypeError::KindMismatch(
+                            format!("{}", &texpr),
+                            format!("{}", k_annot),
+                        ));
+                    }
                 }
-                if k_annot != &k_inf {
-                    return Err(TypeError::KindMismatch(
-                        format!("{}", &type_def.texpr),
-                        format!("{}", k_annot),
-                    ));
-                }
+                type_kinds.insert(name, k_inf);
             }
-            type_kinds.insert(name, k_inf);
         }
     }
 
