@@ -8,24 +8,7 @@ use petgraph::{Graph, algo::toposort};
 use super::ast::*;
 use super::error::{CompileError, TypeError, ValueError};
 
-/*#[derive(Debug, PartialEq)]
-struct Context {
-    types:  HashMap<String, Vec<TypeExpr>>,
-    values: HashMap<String, Vec<ValueExpr>>,
-}*/
-
-//fn uniquify_names(def: &mut Vec<Definition>) {
-//    let mut seen_names = HashMap::new();
-//    for def in defs.iter() {
-//        match
-//    }
-//}
-
-/*
-fn unify(lhs: Option<TypeExpr>, rhs: Option<TypeExpr>, ctx: Context) -> Result<(), &'static str> {
-    Ok(())
-}
-*/
+type TypeStore<'a> = HashMap<&'a str, HashMap<TypeExpr<'a>, TypeExpr<'a>>>;
 
 pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
     let mut types: HashMap<&str, TypeDef> = HashMap::new();
@@ -48,7 +31,24 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
         }
     }
     // validate types
-    let type_kinds = validate_type_defs(&types)?;
+    let types = validate_type_defs(&types)?;
+    validate_const_defs(&types, &consts)?;
+    return Ok(());
+}
+
+fn validate_const_defs(types: &TypeStore, consts: &HashMap<&str, ConstDef>) -> Result<(), CompileError> {
+    // graph of const value variable dependencies
+    let mut dep_graph: Graph<&str, ()> = Graph::new();
+
+    // map of var to dependencies, map of var to indices into graph
+    /*let (deps, node_idx): (HashMap<&str, _>, HashMap<&str, _>) =
+        types.iter()
+        // get dependencies for each type var and add nodes to graph
+        .map(|(s, c)| (
+            (*s, get_const_deps(&c.vexpr, &mut HashSet::new())),
+            (*s, dep_graph.add_node(s))
+        ))
+        .multiunzip();*/
     return Ok(());
 }
 
@@ -56,7 +56,9 @@ pub fn check_defs(defs: Vec<Definition>) -> Result<(), CompileError> {
 //                           mapping of string + kind annot to type expr (allows kw types not defined explicitly)
 // be mutated to add inferred kinds (only infer if kind option is None)
 // TODO add context param if validating locally defined types
-fn validate_type_defs<'a>(types: &'a HashMap<&'a str, TypeDef<'a>>) -> Result<HashMap<&'a str, (TypeExpr<'a>, TypeExpr<'a>)>, TypeError> {
+fn validate_type_defs<'a>(
+    types: &'a HashMap<&'a str, TypeDef<'a>>
+) -> Result<TypeStore<'a>, TypeError> {
     // graph of type variable dependencies
     let mut dep_graph: Graph<&str, _> = Graph::new();
 
@@ -120,10 +122,10 @@ fn validate_type_defs<'a>(types: &'a HashMap<&'a str, TypeDef<'a>>) -> Result<Ha
         }
     }
 
-    let mut out: HashMap<&'a str, (TypeExpr, TypeExpr)> = HashMap::new();
+    let mut out: TypeStore<'a> = HashMap::new();
     for (name, type_def) in types.iter() {
         if let Some(k) = type_kinds.remove(name) {
-            out.insert(name, (k, type_def.texpr.clone()));
+            out.insert(name, HashMap::from([(k, type_def.texpr.clone())]));
         }
     }
 
