@@ -197,14 +197,22 @@ peg::parser!{
             }
             --
             // declare new universal or existential type variable
-            b: (univ() / exis()) _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
-                TypeExpr::Quantified {
-                    params:  l.into_iter()
+            "!" _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
+                TypeExpr::Universal(
+                    l.into_iter()
                         .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
                         .collect(),
-                    is_univ: b,
-                    subexpr: Box::new(t),
-                }
+                    Box::new(t),
+                )
+            }
+            // declare new universal or existential type variable
+            "?" _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
+                TypeExpr::Existential(
+                    l.into_iter()
+                        .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
+                        .collect(),
+                    Box::new(t),
+                )
             }
             --
             // inserting universal type parameters
@@ -217,9 +225,6 @@ peg::parser!{
             t: prod_type() {t}
             t: sum_type() {t}
         }
-        // which variety of quantifier
-        rule univ() -> bool = "!" {true}
-        rule exis() -> bool = "?" {false}
         // type variable
         rule variable_type() -> TypeExpr<'input> =
             n: type_name() {TypeExpr::Variable(n)}
@@ -640,17 +645,16 @@ mod tests {
             Vec::from([Definition::Type(TypeDef {
                 name:  "Foo",
                 kexpr: None,
-                texpr: TypeExpr::Quantified {
-                    params:  Vec::from([("A", KIND_0.clone())]),
-                    is_univ: true,
-                    subexpr: Box::new(TypeExpr::Prod(Vec::from([
+                texpr: TypeExpr::Universal(
+                    Vec::from([("A", KIND_0.clone())]),
+                    Box::new(TypeExpr::Prod(Vec::from([
                         ("_0", TypeExpr::Variable("A")),
                         ("_1", TypeExpr::Sum(Vec::from([
                             ("int", TypeExpr::Variable("Int")),
                             ("float", TypeExpr::Variable("Float")),
                         ]))),
                     ]))),
-                },
+                ),
             })])
         ));
     }
@@ -687,16 +691,15 @@ mod tests {
     #[test]
     fn basic_type_expr_1() {
         assert_eq!(type_expr("?A. Foo{A}"), Ok(
-            TypeExpr::Quantified {
-                params:  Vec::from([("A", KIND_0.clone())]),
-                is_univ: false,
-                subexpr: Box::new(
+            TypeExpr::Existential(
+                Vec::from([("A", KIND_0.clone())]),
+                Box::new(
                     TypeExpr::TypeParams(
                         Box::new(TypeExpr::Variable("Foo")),
                         Vec::from([TypeExpr::Variable("A")]),
                     )
                 ),
-            }
+            )
         ));
     }
 

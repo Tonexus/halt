@@ -171,12 +171,8 @@ fn check_kind<'a>(
             return Ok(kexpr);
         },
 
-        // adds locally-defined type var
-        TypeExpr::Quantified {
-            params:  l,
-            is_univ: b,
-            subexpr: t,
-        } => {
+        // adds local univesal type var
+        TypeExpr::Universal(l, t) => {
             let mut temp_type_kinds = HashMap::new();
             // insert kinds from parameters (checking validity)
             for (name, k) in l.iter() {
@@ -190,11 +186,36 @@ fn check_kind<'a>(
 
             // if universal, add parameter kinds
             let mut kexpr = check_kind(t, type_kinds)?;
-            if *b {
-                for (_, k) in l.iter() {
-                    kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
+            for (_, k) in l.iter() {
+                kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
+            }
+
+            // restore old kinds
+            for (name, _) in l.iter() {
+                if let Some(_) = type_kinds.remove(name) {
+                    if let Some(k) = temp_type_kinds.remove(name) {
+                        type_kinds.insert(name, k);
+                    }
                 }
             }
+            return Ok(kexpr);
+        },
+
+        // adds local existential type var
+        TypeExpr::Existential(l, t) => {
+            let mut temp_type_kinds = HashMap::new();
+            // insert kinds from parameters (checking validity)
+            for (name, k) in l.iter() {
+                if !valid_kind(k) {
+                    return Err(TypeError::InvalidKind(format!("{}", k)));
+                }
+                if let Some(old_k) = type_kinds.insert(name, k.clone()) {
+                    temp_type_kinds.insert(name, old_k);
+                }
+            }
+
+            // if universal, add parameter kinds
+            let kexpr = check_kind(t, type_kinds)?;
 
             // restore old kinds
             for (name, _) in l.iter() {
@@ -314,11 +335,7 @@ fn get_type_deps<'a>(
         },
 
         // adds locally-defined type vars
-        TypeExpr::Quantified {
-            params: l,
-            is_univ: _,
-            subexpr: t,
-        } => {
+        TypeExpr::Universal(l, t) | TypeExpr::Existential(l, t) => {
             let mut temp_vars = Vec::new();
             for (s, _) in l.iter() {
                 // if s is new in vars, need to remember to remove

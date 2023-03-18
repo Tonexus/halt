@@ -20,11 +20,8 @@ lazy_static! {
 pub enum TypeExpr<'a> {
     Variable(&'a str),
     TypeParams(Box<TypeExpr<'a>>, Vec<TypeExpr<'a>>),
-    Quantified {
-        params:  Vec<(&'a str, TypeExpr<'a>)>,
-        is_univ: bool,
-        subexpr: Box<TypeExpr<'a>>,
-    },
+    Universal(Vec<(&'a str, TypeExpr<'a>)>, Box<TypeExpr<'a>>),
+    Existential(Vec<(&'a str, TypeExpr<'a>)>, Box<TypeExpr<'a>>),
     Prod(Vec<(&'a str, TypeExpr<'a>)>),
     Sum(Vec<(&'a str, TypeExpr<'a>)>),
     Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
@@ -39,8 +36,8 @@ impl PartialEq for TypeExpr<'_> {
             two: &TypeExpr<'a>,
             vars: &mut HashMap<&'a str, &'a str>
         ) -> bool {
-            // if singleton, may strip
             match (one, two) {
+                // if singleton, may strip
                 (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
                     | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
                     if let [(FIRST, t2)] = l.as_slice() {
@@ -69,18 +66,9 @@ impl PartialEq for TypeExpr<'_> {
                 },
 
                 // same quantifier
-                (TypeExpr::Quantified {
-                    params: l1, is_univ: b1, subexpr: t1
-                }, TypeExpr::Quantified {
-                    params: l2, is_univ: b2, subexpr: t2
-                }) => {
-                    // TODO rename vars so new context doesn't intersect old? i.e. don't have to clone...
+                (TypeExpr::Universal(l1, t1), TypeExpr::Universal(l2, t2))
+                    | (TypeExpr::Existential(l1, t1), TypeExpr::Existential(l2, t2)) => {
                     let mut temp_vars = HashMap::new();
-                    // quantifier must be same
-                    if b1 != b2 {
-                        return false;
-                    }
-
                     for ((s1, k1), (s2, k2)) in l1.iter().zip(l2.iter()) {
                         // kinds must be same
                         if k1 != k2 {
@@ -178,7 +166,7 @@ impl Hash for TypeExpr<'_> {
 
                 // same quantifier TODO may have diff param names but still eq
                 // (also effects var, since might be a local var)
-                TypeExpr::Quantified {params: l, is_univ: b, subexpr: t} => {
+                TypeExpr::Universal(l, t) => {
                     2.hash(state);
                     let mut temp_vars = Vec::new();
                     for (s, k) in l.iter() {
@@ -188,7 +176,22 @@ impl Hash for TypeExpr<'_> {
                         }
                         k.hash(state);
                     }
-                    b.hash(state);
+                    inner(t, state, vars);
+                    for s in temp_vars.into_iter() {
+                        vars.remove(s);
+                    }
+                },
+
+                TypeExpr::Existential(l, t) => {
+                    3.hash(state);
+                    let mut temp_vars = Vec::new();
+                    for (s, k) in l.iter() {
+                        // if s is new in vars, need to remember to remove
+                        if vars.insert(s) {
+                            temp_vars.push(s);
+                        }
+                        k.hash(state);
+                    }
                     inner(t, state, vars);
                     for s in temp_vars.into_iter() {
                         vars.remove(s);
@@ -196,7 +199,7 @@ impl Hash for TypeExpr<'_> {
                 },
 
                 TypeExpr::Prod(l) => {
-                    3.hash(state);
+                    4.hash(state);
                     for (s, t) in l.iter() {
                         s.hash(state);
                         inner(t, state, vars);
@@ -204,7 +207,7 @@ impl Hash for TypeExpr<'_> {
                 },
 
                 TypeExpr::Sum(l) => {
-                    4.hash(state);
+                    5.hash(state);
                     for (s, t) in l.iter() {
                         s.hash(state);
                         inner(t, state, vars);
@@ -213,7 +216,7 @@ impl Hash for TypeExpr<'_> {
 
                 // same params and returns
                 TypeExpr::Function(t1, t2) => {
-                    5.hash(state);
+                    6.hash(state);
                     inner(t1, state, vars);
                     inner(t2, state, vars);
                 },
@@ -248,17 +251,26 @@ impl Display for TypeExpr<'_> {
                 write!(f, "}}")?;
             },
 
-            TypeExpr::Quantified {
-                params:  l,
-                is_univ: b,
-                subexpr: t,
-            } => {
+            TypeExpr::Universal(l, t) => {
                 // print quantifier
-                if *b {
-                    write!(f, "!")?;
-                } else {
-                    write!(f, "?")?;
-                }
+                write!(f, "!")?;
+                // print type vars and their kinds
+                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
+                    .and_then(|first| {
+                        if !first {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{}: {}", s, k)?;
+                        return Ok(false);
+                    })
+                )?;
+                // write subexpression
+                write!(f, " . {}", *t)?;
+            },
+
+            TypeExpr::Existential(l, t) => {
+                // print quantifier
+                write!(f, "?")?;
                 // print type vars and their kinds
                 l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
                     .and_then(|first| {
@@ -310,6 +322,26 @@ impl Display for TypeExpr<'_> {
         return Ok(());
     }
 }
+
+// take two types and output most general type that satisfies both
+/*fn unify<'a> (
+    one: &TypeExpr<'a>,
+    two: &TypeExpr<'a>,
+    ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+) -> Result<TypeExpr<'a>, TypeError> {
+    match (one, two) {
+        // if singleton, may strip
+        (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
+            | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
+            if let [(FIRST, t2)] = l.as_slice() {
+                return unify(t1, t2, vars);
+            }
+        },
+        (TypeExpr::Quantified {}, t2
+        _ => {},
+
+    }
+}*/
 
 #[cfg(test)]
 mod tests {
@@ -381,6 +413,24 @@ mod tests {
         let h1 = s.finish();
         let t2 = parser::type_expr(
             "!B . B"
+        ).unwrap();
+        let mut s = DefaultHasher::new();
+        t2.hash(&mut s);
+        let h2 = s.finish();
+        assert!(t1 == t2);
+        assert!(h1 == h2);
+    }
+
+    #[test]
+    fn basic_type_equal_5() {
+        let t1 = parser::type_expr(
+            "?A . [(A, A -> A), ()]"
+        ).unwrap();
+        let mut s = DefaultHasher::new();
+        t1.hash(&mut s);
+        let h1 = s.finish();
+        let t2 = parser::type_expr(
+            "[?B . (B, B -> B), ()]"
         ).unwrap();
         let mut s = DefaultHasher::new();
         t2.hash(&mut s);
