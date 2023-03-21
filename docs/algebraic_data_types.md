@@ -52,36 +52,8 @@ Bar := (Type1, Type2, Type3);
 let foo: Foo = (label_1 = value_1, label_2 = value_2, label_3 = value_3);
 let bar: Bar = (value_1, value_2, value_3);
 ```
-
-TODO: outdated?
-
-Product types are ordered by their fields, and can be implicitly cast to a tuple
-and from a tuple with the same order (though their types are not the same).
-
-```
-let foo: (a: U32, b: U32, c: U32) = (a = 1, b = 2, c = 3);
-let bar: (U32, U32, U32) = foo; // bar = (1, 2, 3)
-let baz: (x: U32, y: U32, z: U32) = bar; // baz = (x = 1, y = 2, z = 3)
-// cannot implicitly cast from foo to bar directly
-```
-
 TODO: move to special types section (also include coproduct, accessor)
 An array is expressed as follows:
-
-```
-Foo := Arr{U32, N5};
-```
-
-The above array type is equivalent to the following product type with `length`
-constituent types:
-
-```
-(
-    _1: Type,
-    _2: Type,
-    ...
-)
-```
 
 ### Sum types
 
@@ -121,15 +93,6 @@ let bar: Bar = [value];
 Generally, types with the same structure (same labels for the same types) are
 equivalent, and implicitly labeled types may be treated as explicitly labeled.
 
-TODO should include Uniques?
-
-However, the one exception is via the special `Unique` generic type.
-Specifically, a type `Unique{T}` will have the same composition of types as the
-original type `T`, but will be treated as a distinct type. Furthermore, unlike
-normal generics, each type `Unique{T}` is also distinct from any other type
-`Unique{T}` for the same base type `T`. (Unique{T} can be considered as creating
-a singleton struct from `T` having a program-unique label.)
-
 #### Enums and keyword equivalencies
 
 Most keyword types are simply enums with additional functionality provided by
@@ -148,14 +111,18 @@ Furthermore, parentheses and square brackets can both be naturally used for both
 grouping expressions and for constructing product and sum values, as the
 singleton tuple `(5 + 5)` has type `(U32)`, but may be coerced to `U32`.
 
-#### Sum coercions
+#### Sum up-coercions
 
 Canonicalization may seem to contradict the instatiation of implicitly labelled
 sums. In the example with sums, `[value]` must have type `[Type2]`, which is
 equivalent to `Type2`, but it is assigned to a variable of type
 `[Type1, Type2, ...]`. In Halt, a choice may be automatically coerced to a
-choice with additional summands as long as the source labels and types match a
-subset of the destination labels and types. Implicitly labeled sum values
-without redundant types may be coerced to an implicitly labeled sum of the same
-types but with a different implicit label order.
+choice with more summands as long as the source tags and types are a subset of
+the destination tags and types.
+
+#### Product down-coercions
+
+While sums may coerce to larger sums, the reverse is true for products. A struct
+may automatically be coerced to a struct with fewer factors as long as the
+source fields and types are a superset of the destination fields and types.
 
