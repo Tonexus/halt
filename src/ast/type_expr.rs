@@ -325,14 +325,16 @@ impl Display for TypeExpr<'_> {
     }
 }
 
-// takes a target type and a constraint type, outputting the most general form
-// of the target according to the constraint
-fn unify<'a> (
+// takes a target type and a constraint type and outputs whether or not the
+// target satisfies the constraint
+fn satisfy<'a> (
     trgt: &'a TypeExpr<'a>,
     cstr: &'a TypeExpr<'a>,
     ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
-) -> Result<TypeExpr<'a>, TypeError> {
+) -> Result<(), TypeError> {
     const FIRST: &str = LABELS[0];
+
+    // TODO check for universal here? interior universal should not be allowed
 
     fn inner<'a> (
         trgt: &'a TypeExpr<'a>,
@@ -341,7 +343,7 @@ fn unify<'a> (
         glbl_ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
         trgt_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
         cstr_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
-    ) -> Result<TypeExpr<'a>, TypeError> {
+    ) -> Result<(), TypeError> {
         // check target for simplification
         match trgt {
             // if singleton, may strip
@@ -361,8 +363,7 @@ fn unify<'a> (
                     }
                 }
 
-                // get unification
-                let out = inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx)?;
+                inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx)?;
 
                 // TODO remove unused type vars?
                 // restore replaced vars
@@ -374,7 +375,7 @@ fn unify<'a> (
                     }
                 }
 
-                return Ok(TypeExpr::Exis(h.clone(), Box::new(out)));
+                return Ok(());
             },
 
             _ => {},
@@ -399,8 +400,7 @@ fn unify<'a> (
                     }
                 }
 
-                // get unification
-                let out = inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx)?;
+                inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx)?;
 
                 // TODO remove unused type vars?
                 // restore replaced vars
@@ -412,7 +412,7 @@ fn unify<'a> (
                     }
                 }
 
-                return Ok(TypeExpr::Exis(h.clone(), Box::new(out)));
+                return Ok(());
             },
 
             _ => {},
@@ -424,7 +424,7 @@ fn unify<'a> (
                 // check local contexts first
                 // if same global type variable, output left
                 if s1 == s2 && glbl_ctx.get(s1).is_some() {
-                    return Ok(trgt.clone());
+                    return Ok(());
                 }
                 return Err(TypeError::DefaultErr);
             },
@@ -476,43 +476,60 @@ fn unify<'a> (
                 return true;
             }*/
 
-            // same types and fields
+            // product down-coercion, h1 keys must be superset of h2 keys
             (TypeExpr::Prod(h1), TypeExpr::Prod(h2)) => {
-                let mut out = HashMap::new();
-                for ((s1, t1), (s2, t2)) in h1.iter().zip(h2.iter()) {
-                    // TODO product down-coercion
-                    if s1 != s2 {
+                for (s, t2) in h2.iter() {
+                    if let Some(t1) = h1.get(s) {
+                        // if key matches, must satisfy interior constraint
+                        inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?;
+                    } else {
                         return Err(TypeError::DefaultErr);
                     }
-                    out.insert(*s1, inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?);
                 }
-                return Ok(TypeExpr::Prod(out));
+                return Ok(());
             },
 
+            // sum up-coercion, h1 keys must be subset of h2 keys
             (TypeExpr::Sum(h1), TypeExpr::Sum(h2)) => {
-                let mut out = HashMap::new();
-                for ((s1, t1), (s2, t2)) in h1.iter().zip(h2.iter()) {
-                    // TODO sum up-coercion
-                    if s1 != s2 {
+                for (s, t1) in h1.iter() {
+                    if let Some(t2) = h2.get(s) {
+                        // if key matches, must satisfy interior constraint
+                        inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?;
+                    } else {
                         return Err(TypeError::DefaultErr);
                     }
-                    out.insert(*s1, inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?);
                 }
-                return Ok(TypeExpr::Sum(out));
+                return Ok(());
             },
 
             // same params and returns
             (TypeExpr::Func(t1, t2), TypeExpr::Func(t3, t4)) => {
-                return Ok(TypeExpr::Func(
-                    Box::new(inner(t1, t3, glbl_ctx, trgt_ctx, cstr_ctx)?),
-                    Box::new(inner(t2, t4, glbl_ctx, trgt_ctx, cstr_ctx)?),
-                ));
+                inner(t1, t3, glbl_ctx, trgt_ctx, cstr_ctx)?;
+                return inner(t2, t4, glbl_ctx, trgt_ctx, cstr_ctx);
             }
 
-            _ => {
-                return Err(TypeError::TypeMismatch(format!("{}", trgt), format!("{}", cstr)));
-            },
+            _ => {},
         }
+
+        // product down-coercion to singleton
+        if let TypeExpr::Prod(h) = trgt {
+            if let Some(t) = h.get(FIRST) {
+                if inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        // sum up-coercion from singleton
+        if let TypeExpr::Sum(h) = cstr {
+            if let Some(t) = h.get(FIRST) {
+                if inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
+                    return Ok(());
+                }
+            }
+        }
+
+        return Err(TypeError::TypeMismatch(format!("{}", trgt), format!("{}", cstr)));
     }
 
     return inner(trgt, cstr, ctx, &mut HashMap::new(), &mut HashMap::new());
@@ -525,14 +542,26 @@ mod tests {
     use std::collections::hash_map::DefaultHasher;
 
     #[test]
-    fn basic_unify_1() {
+    fn basic_satisfy_1() {
         let t1 = parser::type_expr(
             "[B]"
         ).unwrap();
         let t2 = parser::type_expr(
             "(B)"
         ).unwrap();
-        assert!(unify(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
+        assert!(satisfy(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
+    }
+
+    #[test]
+    fn basic_satisfy_2() {
+        // down-coerces to B, then up-coerces to [B, B]
+        let t1 = parser::type_expr(
+            "(B, B)"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "[B, B]"
+        ).unwrap();
+        assert!(satisfy(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
     }
 
     /*#[test]
