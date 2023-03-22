@@ -317,7 +317,7 @@ fn satisfy<'a> (
             _ => {},
         }
 
-        // otherwise, check if enums and contents are identical
+        // otherwise, check if enums and contents are identical (expected path)
         match (trgt, cstr) {
             (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
                 // ok if local variables correspond
@@ -337,28 +337,34 @@ fn satisfy<'a> (
 
             // product down-coercion, h1 keys must be superset of h2 keys
             (TypeExpr::Prod(h1), TypeExpr::Prod(h2)) => {
+                let mut b = true;
                 for (s, t2) in h2.iter() {
                     if let Some(t1) = h1.get(s) {
                         // if key matches, must satisfy interior constraint
                         inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?;
                     } else {
-                        return Err(TypeError::DefaultErr);
+                        b = false;
                     }
                 }
-                return Ok(());
+                if b {
+                    return Ok(());
+                }
             },
 
             // sum up-coercion, h1 keys must be subset of h2 keys
             (TypeExpr::Sum(h1), TypeExpr::Sum(h2)) => {
+                let mut b = true;
                 for (s, t1) in h1.iter() {
                     if let Some(t2) = h2.get(s) {
                         // if key matches, must satisfy interior constraint
                         inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?;
                     } else {
-                        return Err(TypeError::DefaultErr);
+                        b = false;
                     }
                 }
-                return Ok(());
+                if b {
+                    return Ok(());
+                }
             },
 
             // same params and returns
@@ -530,6 +536,17 @@ mod tests {
         ).unwrap();
         let t2 = parser::type_expr(
             "?A . (A, A)"
+        ).unwrap();
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
+    }
+
+    #[test]
+    fn medium_satisfy_1() {
+        let t1 = parser::type_expr(
+            "((foo: U32, bar: U32), U32)"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "(foo: U32, bar: U32)"
         ).unwrap();
         assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
     }
