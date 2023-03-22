@@ -404,6 +404,7 @@ fn satisfy<'a> (
                 }
             },
 
+            // TODO move up since cheaper to check?
             // product down-coercion to singleton
             TypeExpr::Prod(h) => {
                 if let Some(t) = h.get(FIRST) {
@@ -451,6 +452,7 @@ fn satisfy<'a> (
                 }
             },
 
+            // TODO move up since cheaper to check?
             // sum up-coercion from singleton
             TypeExpr::Sum(h) => {
                 if let Some(t) = h.get(FIRST) {
@@ -489,7 +491,29 @@ mod tests {
 
     #[test]
     fn basic_satisfy_2() {
-        // down-coerces to B, then up-coerces to [B, B]
+        let t1 = parser::type_expr(
+            "(U32, U32)"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "U32"
+        ).unwrap();
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
+    }
+
+    #[test]
+    fn basic_satisfy_3() {
+        let t1 = parser::type_expr(
+            "U32"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "[U32, U32]"
+        ).unwrap();
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
+    }
+
+    #[test]
+    fn basic_satisfy_4() {
+        // down-coerces to U32, then up-coerces to [U32, U32]
         let t1 = parser::type_expr(
             "(U32, U32)"
         ).unwrap();
@@ -500,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_satisfy_3() {
+    fn basic_satisfy_5() {
         let t1 = parser::type_expr(
             "(U32, U32)"
         ).unwrap();
@@ -509,6 +533,7 @@ mod tests {
         ).unwrap();
         assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
     }
+
 
     /*#[test]
     fn basic_type_equal_1() {
