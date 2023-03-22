@@ -8,7 +8,7 @@ use std::{
 
 use lazy_static::lazy_static;
 
-use super::super::misc::*;
+use super::super::{misc::*, error::*};
 
 lazy_static! {
     pub static ref KIND_0: TypeExpr<'static> = TypeExpr::Variable("Type");
@@ -324,24 +324,130 @@ impl Display for TypeExpr<'_> {
 }
 
 // take two types and output most general type that satisfies both
-/*fn unify<'a> (
+fn unify<'a> (
     one: &TypeExpr<'a>,
     two: &TypeExpr<'a>,
     ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
 ) -> Result<TypeExpr<'a>, TypeError> {
-    match (one, two) {
-        // if singleton, may strip
-        (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
-            | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
-            if let [(FIRST, t2)] = l.as_slice() {
-                return unify(t1, t2, vars);
-            }
-        },
-        (TypeExpr::Quantified {}, t2
-        _ => {},
+    const FIRST: &str = LABELS[0];
 
+    fn inner<'a> (
+        one: &TypeExpr<'a>,
+        two: &TypeExpr<'a>,
+        glb_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+        one_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+        two_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+    ) -> Result<TypeExpr<'a>, TypeError> {
+        match (one, two) {
+            // if singleton, may strip
+            (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
+                | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
+                if let [(FIRST, t2)] = l.as_slice() {
+                    return inner(t1, t2, glb_ctx, one_ctx, two_ctx);
+                }
+            },
+            _ => {},
+        }
+
+        // otherwise, enum and contents must be identical
+        match (one, two) {
+            /*(TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
+                return match (vars.get(s1), vars.get(s2)) {
+                    // local vars must correspond to each other
+                    (Some(s3), Some(s4)) => (s1 == s4) && (s2 == s3),
+                    // or same global var name
+                    (None,     None)     => s1 == s2,
+                    _                    => false,
+                };
+            },
+
+            // same subexpr and params
+            (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) => {
+                return inner(t1, t2, vars) && l1.iter().zip(l2.iter())
+                    .fold(true, |a, (t1, t2)| a && inner(t1, t2, vars));
+            },
+
+            // same quantifier
+            (TypeExpr::Universal(l1, t1), TypeExpr::Universal(l2, t2))
+                | (TypeExpr::Existential(l1, t1), TypeExpr::Existential(l2, t2)) => {
+                let mut temp_vars = HashMap::new();
+                for ((s1, k1), (s2, k2)) in l1.iter().zip(l2.iter()) {
+                    // kinds must be same
+                    if k1 != k2 {
+                        return false;
+                    }
+                    // add new quantified vars so they correspond to each other
+                    // save old vars for later
+                    if let Some(s) = vars.insert(s1, s2) {
+                        temp_vars.insert(s1, s);
+                    }
+                    if let Some(s) = vars.insert(s2, s1) {
+                        temp_vars.insert(s2, s);
+                    }
+                }
+
+                // check equality under new quantified vars
+                if !inner(t1, t2, vars) {
+                    return false;
+                }
+
+                // otherwise, restore old vars
+                for ((s1, _), (s2, _)) in l1.iter().zip(l2.iter()) {
+                    if let Some(_) = vars.remove(s1) {
+                        if let Some(s) = temp_vars.remove(s1) {
+                            vars.insert(s1, s);
+                        }
+                    }
+                    if let Some(_) = vars.remove(s2) {
+                        if let Some(s) = temp_vars.remove(s2) {
+                            vars.insert(s2, s);
+                        }
+                    }
+                }
+                return true;
+            }*/
+
+            // same types and fields
+            (TypeExpr::Prod(l1), TypeExpr::Prod(l2)) => {
+                let mut l3 = Vec::new();
+                for ((s1, t1), (s2, t2)) in l1.iter().zip(l2.iter()) {
+                    // TODO product down-coercion
+                    if s1 != s2 {
+                        return Err(TypeError::DefaultErr);
+                    }
+                    l3.push((*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?));
+                }
+                return Ok(TypeExpr::Prod(l3));
+            },
+
+            (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => {
+                let mut l3 = Vec::new();
+                for ((s1, t1), (s2, t2)) in l1.iter().zip(l2.iter()) {
+                    // TODO sum up-coercion
+                    if s1 != s2 {
+                        return Err(TypeError::DefaultErr);
+                    }
+                    l3.push((*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?));
+                }
+                return Ok(TypeExpr::Sum(l3));
+            },
+
+            // same params and returns
+            (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) => {
+                return Ok(TypeExpr::Function(
+                    Box::new(inner(t1, t3, glb_ctx, one_ctx, two_ctx)?),
+                    Box::new(inner(t2, t4, glb_ctx, one_ctx, two_ctx)?),
+                ));
+            }
+
+            _ => {
+                return Err(TypeError::TypeMismatch(format!("{}", one), format!("{}", two)));
+            },
+        }
     }
-}*/
+
+    return inner(one, two, ctx, &mut HashMap::new(), &mut HashMap::new());
+}
 
 #[cfg(test)]
 mod tests {

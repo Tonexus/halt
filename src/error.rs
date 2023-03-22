@@ -40,6 +40,8 @@ pub enum TypeError {
     // TODO type name, in which def
     #[error("Type \"{0}\" has too many parameters.")]
     TooManyParams(String),
+    #[error("Types \"{0}\" and \"{1}\" cannot be unified.")]
+    TypeMismatch(String, String),
     #[error("You are bad and should feel bad.")]
     DefaultErr,
 }
