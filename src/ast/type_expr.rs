@@ -3,7 +3,6 @@
 use std::{
     fmt, fmt::{Display, Formatter},
     collections::{HashSet, HashMap},
-    hash::{Hash, Hasher},
 };
 
 use itertools::Itertools;
@@ -132,102 +131,6 @@ impl PartialEq for TypeExpr<'_> {
 }
 
 impl Eq for TypeExpr<'_> {}
-
-impl Hash for TypeExpr<'_> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        const FIRST: &str = LABELS[0];
-
-        fn inner<'a, H: Hasher>(texpr: &'a TypeExpr, state: &mut H, vars: &mut HashSet<&'a str>) {
-            // if singleton, may strip
-            match texpr {
-                TypeExpr::Prod(h) | TypeExpr::Sum(h)  => {
-                    if let Ok((&FIRST, t)) = h.iter().exactly_one() {
-                        inner(t, state, vars);
-                        return;
-                    }
-                },
-                _ => {},
-            }
-
-            // otherwise, hash based on nested structure
-            match texpr {
-                TypeExpr::Variable(s) => {
-                    0.hash(state);
-                    if !vars.contains(s) {
-                        s.hash(state);
-                    }
-                },
-
-                TypeExpr::TypeParams(t1, l) => {
-                    1.hash(state);
-                    inner(t1, state, vars);
-                    for t2 in l.iter() {
-                        inner(t2, state, vars);
-                    }
-                },
-
-                // same quantifier TODO may have diff param names but still eq
-                // (also effects var, since might be a local var)
-                TypeExpr::Univ(h, t) => {
-                    2.hash(state);
-                    let mut temp_vars = Vec::new();
-                    for (s, k) in h.iter() {
-                        // if s is new in vars, need to remember to remove
-                        if vars.insert(s) {
-                            temp_vars.push(s);
-                        }
-                        k.hash(state);
-                    }
-                    inner(t, state, vars);
-                    for s in temp_vars.into_iter() {
-                        vars.remove(s);
-                    }
-                },
-
-                TypeExpr::Exis(h, t) => {
-                    3.hash(state);
-                    let mut temp_vars = Vec::new();
-                    for (s, k) in h.iter() {
-                        // if s is new in vars, need to remember to remove
-                        if vars.insert(s) {
-                            temp_vars.push(s);
-                        }
-                        k.hash(state);
-                    }
-                    inner(t, state, vars);
-                    for s in temp_vars.into_iter() {
-                        vars.remove(s);
-                    }
-                },
-
-                TypeExpr::Prod(h) => {
-                    4.hash(state);
-                    for (s, t) in h.iter() {
-                        s.hash(state);
-                        inner(t, state, vars);
-                    }
-                },
-
-                TypeExpr::Sum(h) => {
-                    5.hash(state);
-                    for (s, t) in h.iter() {
-                        s.hash(state);
-                        inner(t, state, vars);
-                    }
-                },
-
-                // same params and returns
-                TypeExpr::Func(t1, t2) => {
-                    6.hash(state);
-                    inner(t1, state, vars);
-                    inner(t2, state, vars);
-                },
-            }
-        }
-
-        inner(self, state, &mut HashSet::new());
-    }
-}
 
 impl Display for TypeExpr<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -432,46 +335,7 @@ fn satisfy<'a> (
                 return inner(t1, t2, vars) && l1.iter().zip(l2.iter())
                     .fold(true, |a, (t1, t2)| a && inner(t1, t2, vars));
             },
-
-            // same quantifier
-            (TypeExpr::Universal(l1, t1), TypeExpr::Universal(l2, t2))
-                | (TypeExpr::Existential(l1, t1), TypeExpr::Existential(l2, t2)) => {
-                let mut temp_vars = HashMap::new();
-                for ((s1, k1), (s2, k2)) in l1.iter().zip(l2.iter()) {
-                    // kinds must be same
-                    if k1 != k2 {
-                        return false;
-                    }
-                    // add new quantified vars so they correspond to each other
-                    // save old vars for later
-                    if let Some(s) = vars.insert(s1, s2) {
-                        temp_vars.insert(s1, s);
-                    }
-                    if let Some(s) = vars.insert(s2, s1) {
-                        temp_vars.insert(s2, s);
-                    }
-                }
-
-                // check equality under new quantified vars
-                if !inner(t1, t2, vars) {
-                    return false;
-                }
-
-                // otherwise, restore old vars
-                for ((s1, _), (s2, _)) in l1.iter().zip(l2.iter()) {
-                    if let Some(_) = vars.remove(s1) {
-                        if let Some(s) = temp_vars.remove(s1) {
-                            vars.insert(s1, s);
-                        }
-                    }
-                    if let Some(_) = vars.remove(s2) {
-                        if let Some(s) = temp_vars.remove(s2) {
-                            vars.insert(s2, s);
-                        }
-                    }
-                }
-                return true;
-            }*/
+            */
 
             // product down-coercion, h1 keys must be superset of h2 keys
             (TypeExpr::Prod(h1), TypeExpr::Prod(h2)) => {
@@ -595,7 +459,6 @@ fn satisfy<'a> (
 mod tests {
     use super::*;
     use super::super::super::parser;
-    use std::collections::hash_map::DefaultHasher;
 
     #[test]
     fn basic_satisfy_1() {
@@ -636,17 +499,10 @@ mod tests {
         let t1 = parser::type_expr(
             "A"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t1.hash(&mut s);
-        let h1 = s.finish();
         let t2 = parser::type_expr(
             "A"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t2.hash(&mut s);
-        let h2 = s.finish();
         assert!(t1 == t2);
-        assert!(h1 == h2);
     }
 
     #[test]
@@ -654,17 +510,10 @@ mod tests {
         let t1 = parser::type_expr(
             "([A])"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t1.hash(&mut s);
-        let h1 = s.finish();
         let t2 = parser::type_expr(
             "A"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t2.hash(&mut s);
-        let h2 = s.finish();
         assert!(t1 == t2);
-        assert!(h1 == h2);
     }
 
     #[test]
@@ -672,17 +521,10 @@ mod tests {
         let t1 = parser::type_expr(
             "!A . ([A])"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t1.hash(&mut s);
-        let h1 = s.finish();
         let t2 = parser::type_expr(
             "!A . A"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t2.hash(&mut s);
-        let h2 = s.finish();
         assert!(t1 == t2);
-        assert!(h1 == h2);
     }
 
     #[test]
@@ -690,17 +532,10 @@ mod tests {
         let t1 = parser::type_expr(
             "!A . A"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t1.hash(&mut s);
-        let h1 = s.finish();
         let t2 = parser::type_expr(
             "!B . B"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t2.hash(&mut s);
-        let h2 = s.finish();
         assert!(t1 == t2);
-        assert!(h1 == h2);
     }
 
     #[test]
@@ -708,17 +543,10 @@ mod tests {
         let t1 = parser::type_expr(
             "?A . [(A, A -> A), ()]"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t1.hash(&mut s);
-        let h1 = s.finish();
         let t2 = parser::type_expr(
             "[?B . (B, B -> B), ()]"
         ).unwrap();
-        let mut s = DefaultHasher::new();
-        t2.hash(&mut s);
-        let h2 = s.finish();
         assert!(t1 == t2);
-        assert!(h1 == h2);
     }*/
 }
 

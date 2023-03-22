@@ -4,7 +4,7 @@ mod ast;
 mod error;
 mod misc;
 mod parser;
-mod type_checker;
+//mod type_checker;
 
 use std::{env, fs::File, io::Read};
 
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     file.read_to_string(&mut contents).context("Failed to read file")?;
 
     let defs = parser::defs(&contents).map_err(|e| CompileError::from(e))?;
-    type_checker::check_defs(defs)?;
+    //type_checker::check_defs(defs)?;
     println!("Program ok!");
     return Ok(());
 }
