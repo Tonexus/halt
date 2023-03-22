@@ -330,19 +330,19 @@ impl Display for TypeExpr<'_> {
 fn satisfy<'a> (
     trgt: &'a TypeExpr<'a>,
     cstr: &'a TypeExpr<'a>,
-    ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
+    ctx: &HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
 ) -> Result<(), TypeError> {
     const FIRST: &str = LABELS[0];
 
     // TODO check for universal here? interior universal should not be allowed
 
     fn inner<'a> (
-        trgt: &'a TypeExpr<'a>,
-        cstr: &'a TypeExpr<'a>,
+        trgt: &TypeExpr<'a>,
+        cstr: &TypeExpr<'a>,
         // global and local maps from variable name to type expression and kind
-        glbl_ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
-        trgt_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
-        cstr_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
+        glbl_ctx: &HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
+        trgt_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
+        cstr_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
     ) -> Result<(), TypeError> {
         // check target for simplification
         match trgt {
@@ -358,14 +358,13 @@ fn satisfy<'a> (
                 let mut restore = HashMap::new();
                 // collect replaced vars
                 for (s, k) in h.iter() {
-                    if let Some(rep) = trgt_ctx.insert(s, (None, k)) {
+                    if let Some(rep) = trgt_ctx.insert(s, (None, k.clone())) {
                         restore.insert(s, rep);
                     }
                 }
 
                 inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx)?;
 
-                // TODO remove unused type vars?
                 // restore replaced vars
                 for (s, _) in h.iter() {
                     if let Some(rep) = restore.remove(s) {
@@ -395,14 +394,13 @@ fn satisfy<'a> (
                 let mut restore = HashMap::new();
                 // collect replaced vars
                 for (s, k) in h.iter() {
-                    if let Some(rep) = cstr_ctx.insert(s, (None, k)) {
+                    if let Some(rep) = cstr_ctx.insert(s, (None, k.clone())) {
                         restore.insert(s, rep);
                     }
                 }
 
                 inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx)?;
 
-                // TODO remove unused type vars?
                 // restore replaced vars
                 for (s, _) in h.iter() {
                     if let Some(rep) = restore.remove(s) {
@@ -426,7 +424,6 @@ fn satisfy<'a> (
                 if s1 == s2 && glbl_ctx.get(s1).is_some() {
                     return Ok(());
                 }
-                return Err(TypeError::DefaultErr);
             },
 
             /*
@@ -511,22 +508,81 @@ fn satisfy<'a> (
             _ => {},
         }
 
-        // product down-coercion to singleton
-        if let TypeExpr::Prod(h) = trgt {
-            if let Some(t) = h.get(FIRST) {
-                if inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
-                    return Ok(());
+        match trgt {
+            // replace variable
+            TypeExpr::Variable(s) => {
+                if let Some((o, _)) = trgt_ctx.get(s) {
+                    // TODO check kinds?
+                    if let Some(t) = o {
+                        return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
+                    } else {
+                        // if not caught above, existential var can never satsify
+                        return Err(TypeError::DefaultErr);
+                    }
                 }
-            }
+
+                match glbl_ctx.get(s) {
+                    Some((Some(t), _)) => {
+                        return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
+                    },
+
+                    // either variable is no match at all or has no def
+                    // TODO lookup base types?
+                    _ => {
+                        //return Err(TypeError::DefaultErr);
+                    },
+                }
+            },
+
+            // product down-coercion to singleton
+            TypeExpr::Prod(h) => {
+                if let Some(t) = h.get(FIRST) {
+                    if inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
+                        return Ok(());
+                    }
+                }
+            },
+
+            _ => {},
         }
 
-        // sum up-coercion from singleton
-        if let TypeExpr::Sum(h) = cstr {
-            if let Some(t) = h.get(FIRST) {
-                if inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
-                    return Ok(());
+        match cstr {
+            // replace variable
+            TypeExpr::Variable(s) => {
+                if let Some((o, k)) = cstr_ctx.get(s) {
+                    // TODO check kinds?
+                    if let Some(t) = o {
+                        return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
+                    } else {
+                        // existential var can always be replaced in constraint
+                        cstr_ctx.insert(s, (Some(trgt.clone()), k.clone()));
+                        return Ok(());
+                    }
                 }
-            }
+
+                match glbl_ctx.get(s) {
+                    Some((Some(t), _)) => {
+                        return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
+                    },
+
+                    // either variable is no match at all or has no def
+                    // TODO lookup base types?
+                    _ => {
+                        //return Err(TypeError::DefaultErr);
+                    },
+                }
+            },
+
+            // sum up-coercion from singleton
+            TypeExpr::Sum(h) => {
+                if let Some(t) = h.get(FIRST) {
+                    if inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx).is_ok() {
+                        return Ok(());
+                    }
+                }
+            },
+
+            _ => {},
         }
 
         return Err(TypeError::TypeMismatch(format!("{}", trgt), format!("{}", cstr)));
@@ -544,24 +600,35 @@ mod tests {
     #[test]
     fn basic_satisfy_1() {
         let t1 = parser::type_expr(
-            "[B]"
+            "[U32]"
         ).unwrap();
         let t2 = parser::type_expr(
-            "(B)"
+            "(U32)"
         ).unwrap();
-        assert!(satisfy(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
     }
 
     #[test]
     fn basic_satisfy_2() {
         // down-coerces to B, then up-coerces to [B, B]
         let t1 = parser::type_expr(
-            "(B, B)"
+            "(U32, U32)"
         ).unwrap();
         let t2 = parser::type_expr(
-            "[B, B]"
+            "[U32, U32]"
         ).unwrap();
-        assert!(satisfy(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
+    }
+
+    #[test]
+    fn basic_satisfy_3() {
+        let t1 = parser::type_expr(
+            "(U32, U32)"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "?A . (A, A)"
+        ).unwrap();
+        assert!(satisfy(&t1, &t2, &HashMap::from([("U32", (None, KIND_0.clone()))])).is_ok());
     }
 
     /*#[test]
