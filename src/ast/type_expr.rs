@@ -237,8 +237,6 @@ fn satisfy<'a> (
 ) -> Result<(), TypeError> {
     const FIRST: &str = LABELS[0];
 
-    // TODO check for universal here? interior universal should not be allowed
-
     fn inner<'a> (
         trgt: &TypeExpr<'a>,
         cstr: &TypeExpr<'a>,
@@ -319,11 +317,11 @@ fn satisfy<'a> (
             _ => {},
         }
 
-        // otherwise, enum and contents must be identical
+        // otherwise, check if enums and contents are identical
         match (trgt, cstr) {
             (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
-                // check local contexts first
-                // if same global type variable, output left
+                // ok if local variables correspond
+                // also ok if neither are local and same global type variable
                 if s1 == s2 && glbl_ctx.get(s1).is_some() {
                     return Ok(());
                 }
@@ -372,13 +370,16 @@ fn satisfy<'a> (
             _ => {},
         }
 
+        // check target substitutions
         match trgt {
             // replace variable
             TypeExpr::Variable(s) => {
                 if let Some((o, _)) = trgt_ctx.get(s) {
                     // TODO check kinds?
+                    // type defined with implementation, so substitute
                     if let Some(t) = o {
                         return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
+                    // type missing implementation, meaning is existential
                     } else {
                         // if not caught above, existential var can never satsify
                         return Err(TypeError::DefaultErr);
@@ -386,14 +387,19 @@ fn satisfy<'a> (
                 }
 
                 match glbl_ctx.get(s) {
+                    // type defined with implementation, so substitute
                     Some((Some(t), _)) => {
                         return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
                     },
 
-                    // either variable is no match at all or has no def
-                    // TODO lookup base types?
-                    _ => {
-                        //return Err(TypeError::DefaultErr);
+                    // type defined, but missing implementation
+                    Some((None, _)) => {
+                        // TODO lookup base types?
+                    },
+
+                    // type undefined
+                    None => {
+                        return Err(TypeError::DefaultErr);
                     },
                 }
             },
@@ -410,13 +416,16 @@ fn satisfy<'a> (
             _ => {},
         }
 
+        // check constraint substitutions
         match cstr {
             // replace variable
             TypeExpr::Variable(s) => {
                 if let Some((o, k)) = cstr_ctx.get(s) {
                     // TODO check kinds?
+                    // type defined with implementation, so substitute
                     if let Some(t) = o {
                         return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
+                    // type missing implementation, meaning is existential
                     } else {
                         // existential var can always be replaced in constraint
                         cstr_ctx.insert(s, (Some(trgt.clone()), k.clone()));
@@ -425,14 +434,19 @@ fn satisfy<'a> (
                 }
 
                 match glbl_ctx.get(s) {
+                    // type defined with implementation, so substitute
                     Some((Some(t), _)) => {
                         return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
                     },
 
-                    // either variable is no match at all or has no def
-                    // TODO lookup base types?
-                    _ => {
-                        //return Err(TypeError::DefaultErr);
+                    // type defined, but missing implementation
+                    Some((None, _)) => {
+                        // TODO lookup base types?
+                    },
+
+                    // type undefined
+                    None => {
+                        return Err(TypeError::DefaultErr);
                     },
                 }
             },
@@ -451,6 +465,8 @@ fn satisfy<'a> (
 
         return Err(TypeError::TypeMismatch(format!("{}", trgt), format!("{}", cstr)));
     }
+    // TODO check for universal here? interior naked universal is not allowed
+
 
     return inner(trgt, cstr, ctx, &mut HashMap::new(), &mut HashMap::new());
 }
