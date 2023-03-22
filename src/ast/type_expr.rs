@@ -237,13 +237,35 @@ fn satisfy<'a> (
 ) -> Result<(), TypeError> {
     const FIRST: &str = LABELS[0];
 
+    // state of a target local type variable
+    enum TrgtState<'a> {
+        // has yet to be assigned
+        Unset,
+        // assigned to an expression
+        Expr(TypeExpr<'a>),
+        // assigned to constraint variable
+        Mapped(HashSet<&'a str>),
+    }
+
+    // state of a constraint local type variable
+    enum CstrState<'a> {
+        // has yet to be assigned
+        Unset,
+        // assigned to an expression
+        Expr(TypeExpr<'a>),
+        // assigned to target variable
+        Mapped(&'a str),
+        // assigned to target variable that is now out of scope
+        Invalid,
+    }
+
     fn inner<'a> (
         trgt: &TypeExpr<'a>,
         cstr: &TypeExpr<'a>,
         // global and local maps from variable name to type expression and kind
         glbl_ctx: &HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
-        trgt_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
-        cstr_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
+        trgt_ctx: &mut HashMap<&'a str, (TrgtState<'a>, TypeExpr<'a>)>,
+        cstr_ctx: &mut HashMap<&'a str, (CstrState<'a>, TypeExpr<'a>)>,
     ) -> Result<(), TypeError> {
         // check target for simplification
         match trgt {
@@ -259,7 +281,7 @@ fn satisfy<'a> (
                 let mut restore = HashMap::new();
                 // collect replaced vars
                 for (s, k) in h.iter() {
-                    if let Some(rep) = trgt_ctx.insert(s, (None, k.clone())) {
+                    if let Some(rep) = trgt_ctx.insert(s, (TrgtState::Unset, k.clone())) {
                         restore.insert(s, rep);
                     }
                 }
@@ -295,7 +317,7 @@ fn satisfy<'a> (
                 let mut restore = HashMap::new();
                 // collect replaced vars
                 for (s, k) in h.iter() {
-                    if let Some(rep) = cstr_ctx.insert(s, (None, k.clone())) {
+                    if let Some(rep) = cstr_ctx.insert(s, (CstrState::Unset, k.clone())) {
                         restore.insert(s, rep);
                     }
                 }
@@ -380,15 +402,20 @@ fn satisfy<'a> (
         match trgt {
             // replace variable
             TypeExpr::Variable(s) => {
-                if let Some((o, _)) = trgt_ctx.get(s) {
-                    // TODO check kinds?
-                    // type defined with implementation, so substitute
-                    if let Some(t) = o {
-                        return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
-                    // type missing implementation, meaning is existential
-                    } else {
-                        // if not caught above, existential var can never satsify
-                        return Err(TypeError::DefaultErr);
+                if let Some((en, _)) = trgt_ctx.get(s) {
+                    match en {
+                        // TODO check kinds?
+                        // type defined with implementation, so substitute
+                        TrgtState::Expr(t) => {
+                            return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
+                        },
+
+                        // type has no implementation, meaning is existential
+                        _ => {
+                            // know cstr is not var, or would be caught earlier
+                            // existential vars can never satsify constraint
+                            return Err(TypeError::DefaultErr);
+                        },
                     }
                 }
 
@@ -427,16 +454,22 @@ fn satisfy<'a> (
         match cstr {
             // replace variable
             TypeExpr::Variable(s) => {
-                if let Some((o, k)) = cstr_ctx.get(s) {
-                    // TODO check kinds?
-                    // type defined with implementation, so substitute
-                    if let Some(t) = o {
-                        return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
-                    // type missing implementation, meaning is existential
-                    } else {
-                        // existential var can always be replaced in constraint
-                        cstr_ctx.insert(s, (Some(trgt.clone()), k.clone()));
-                        return Ok(());
+                if let Some((en, k)) = cstr_ctx.get(s) {
+                    match en {
+                        // TODO check kinds?
+                        // type defined with implementation, so substitute
+                        CstrState::Expr(t) => {
+                            return inner(trgt, t, glbl_ctx, trgt_ctx, &mut HashMap::new());
+                        },
+
+                        // type has no implementation, meaning is existential
+                        _ => {
+                            // know trgt is not var, or would be caught earlier
+                            // existential vars can be replaced in constraint
+                            // PROBLEM: needs other's context
+                            cstr_ctx.insert(s, (CstrState::Expr(trgt.clone()), k.clone()));
+                            return Ok(());
+                        },
                     }
                 }
 
