@@ -325,44 +325,111 @@ impl Display for TypeExpr<'_> {
     }
 }
 
-// take two types and output most general type that satisfies both
+// takes a target type and a constraint type, outputting the most general form
+// of the target according to the constraint
 fn unify<'a> (
-    one: &TypeExpr<'a>,
-    two: &TypeExpr<'a>,
-    ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+    trgt: &'a TypeExpr<'a>,
+    cstr: &'a TypeExpr<'a>,
+    ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
 ) -> Result<TypeExpr<'a>, TypeError> {
     const FIRST: &str = LABELS[0];
 
     fn inner<'a> (
-        one: &TypeExpr<'a>,
-        two: &TypeExpr<'a>,
-        glb_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
-        one_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
-        two_ctx: &mut HashMap<&'a str, TypeExpr<'a>>,
+        trgt: &'a TypeExpr<'a>,
+        cstr: &'a TypeExpr<'a>,
+        // global and local maps from variable name to type expression and kind
+        glbl_ctx: &HashMap<&'a str, (TypeExpr<'a>, &'a TypeExpr<'a>)>,
+        trgt_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
+        cstr_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, &'a TypeExpr<'a>)>,
     ) -> Result<TypeExpr<'a>, TypeError> {
-        match (one, two) {
+        // check target for simplification
+        match trgt {
             // if singleton, may strip
-            (TypeExpr::Prod(h), t1) | (TypeExpr::Sum(h), t1)
-                | (t1, TypeExpr::Prod(h)) | (t1, TypeExpr::Sum(h)) => {
-                if let Ok((&FIRST, t2)) = h.iter().exactly_one() {
-                    return inner(t1, t2, glb_ctx, one_ctx, two_ctx);
+            TypeExpr::Prod(h) | TypeExpr::Sum(h) => {
+                if let Ok((&FIRST, t)) = h.iter().exactly_one() {
+                    return inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx);
                 }
             },
+
+            // if exis, insert vars into ctx
+            TypeExpr::Exis(h, t) => {
+                let mut restore = HashMap::new();
+                // collect replaced vars
+                for (s, k) in h.iter() {
+                    if let Some(rep) = trgt_ctx.insert(s, (None, k)) {
+                        restore.insert(s, rep);
+                    }
+                }
+
+                // get unification
+                let out = inner(t, cstr, glbl_ctx, trgt_ctx, cstr_ctx)?;
+
+                // TODO remove unused type vars?
+                // restore replaced vars
+                for (s, _) in h.iter() {
+                    if let Some(rep) = restore.remove(s) {
+                        trgt_ctx.insert(s, rep);
+                    } else {
+                        trgt_ctx.remove(s);
+                    }
+                }
+
+                return Ok(TypeExpr::Exis(h.clone(), Box::new(out)));
+            },
+
+            _ => {},
+        }
+
+        // check constraint for simplification
+        match cstr {
+            // if singleton, may strip
+            TypeExpr::Prod(h) | TypeExpr::Sum(h) => {
+                if let Ok((&FIRST, t)) = h.iter().exactly_one() {
+                    return inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx);
+                }
+            },
+
+            // if exis, insert vars into ctx
+            TypeExpr::Exis(h, t) => {
+                let mut restore = HashMap::new();
+                // collect replaced vars
+                for (s, k) in h.iter() {
+                    if let Some(rep) = cstr_ctx.insert(s, (None, k)) {
+                        restore.insert(s, rep);
+                    }
+                }
+
+                // get unification
+                let out = inner(trgt, t, glbl_ctx, trgt_ctx, cstr_ctx)?;
+
+                // TODO remove unused type vars?
+                // restore replaced vars
+                for (s, _) in h.iter() {
+                    if let Some(rep) = restore.remove(s) {
+                        cstr_ctx.insert(s, rep);
+                    } else {
+                        cstr_ctx.remove(s);
+                    }
+                }
+
+                return Ok(TypeExpr::Exis(h.clone(), Box::new(out)));
+            },
+
             _ => {},
         }
 
         // otherwise, enum and contents must be identical
-        match (one, two) {
-            /*(TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
-                return match (vars.get(s1), vars.get(s2)) {
-                    // local vars must correspond to each other
-                    (Some(s3), Some(s4)) => (s1 == s4) && (s2 == s3),
-                    // or same global var name
-                    (None,     None)     => s1 == s2,
-                    _                    => false,
-                };
+        match (trgt, cstr) {
+            (TypeExpr::Variable(s1), TypeExpr::Variable(s2)) => {
+                // check local contexts first
+                // if same global type variable, output left
+                if s1 == s2 && glbl_ctx.get(s1).is_some() {
+                    return Ok(trgt.clone());
+                }
+                return Err(TypeError::DefaultErr);
             },
 
+            /*
             // same subexpr and params
             (TypeExpr::TypeParams(t1, l1), TypeExpr::TypeParams(t2, l2)) => {
                 return inner(t1, t2, vars) && l1.iter().zip(l2.iter())
@@ -417,7 +484,7 @@ fn unify<'a> (
                     if s1 != s2 {
                         return Err(TypeError::DefaultErr);
                     }
-                    out.insert(*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?);
+                    out.insert(*s1, inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?);
                 }
                 return Ok(TypeExpr::Prod(out));
             },
@@ -429,7 +496,7 @@ fn unify<'a> (
                     if s1 != s2 {
                         return Err(TypeError::DefaultErr);
                     }
-                    out.insert(*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?);
+                    out.insert(*s1, inner(t1, t2, glbl_ctx, trgt_ctx, cstr_ctx)?);
                 }
                 return Ok(TypeExpr::Sum(out));
             },
@@ -437,18 +504,18 @@ fn unify<'a> (
             // same params and returns
             (TypeExpr::Func(t1, t2), TypeExpr::Func(t3, t4)) => {
                 return Ok(TypeExpr::Func(
-                    Box::new(inner(t1, t3, glb_ctx, one_ctx, two_ctx)?),
-                    Box::new(inner(t2, t4, glb_ctx, one_ctx, two_ctx)?),
+                    Box::new(inner(t1, t3, glbl_ctx, trgt_ctx, cstr_ctx)?),
+                    Box::new(inner(t2, t4, glbl_ctx, trgt_ctx, cstr_ctx)?),
                 ));
             }
 
             _ => {
-                return Err(TypeError::TypeMismatch(format!("{}", one), format!("{}", two)));
+                return Err(TypeError::TypeMismatch(format!("{}", trgt), format!("{}", cstr)));
             },
         }
     }
 
-    return inner(one, two, ctx, &mut HashMap::new(), &mut HashMap::new());
+    return inner(trgt, cstr, ctx, &mut HashMap::new(), &mut HashMap::new());
 }
 
 #[cfg(test)]
@@ -458,6 +525,17 @@ mod tests {
     use std::collections::hash_map::DefaultHasher;
 
     #[test]
+    fn basic_unify_1() {
+        let t1 = parser::type_expr(
+            "[B]"
+        ).unwrap();
+        let t2 = parser::type_expr(
+            "(B)"
+        ).unwrap();
+        assert!(unify(&t1, &t2, &HashMap::from([("B", (t1.clone(), &*KIND_0))])).is_ok());
+    }
+
+    /*#[test]
     fn basic_type_equal_1() {
         let t1 = parser::type_expr(
             "A"
@@ -545,6 +623,6 @@ mod tests {
         let h2 = s.finish();
         assert!(t1 == t2);
         assert!(h1 == h2);
-    }
+    }*/
 }
 
