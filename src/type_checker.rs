@@ -155,7 +155,7 @@ fn check_kind<'a>(
             let mut kexpr = check_kind(t1, type_kinds)?;
             for t2 in l.into_iter() {
                 // check if has slots for params
-                if let TypeExpr::Function(k1, k2) = kexpr {
+                if let TypeExpr::Func(k1, k2) = kexpr {
                     if *k1 == check_kind(t2, type_kinds)? {
                         kexpr = *k2;
                     } else {
@@ -172,10 +172,10 @@ fn check_kind<'a>(
         },
 
         // adds local univesal type var
-        TypeExpr::Universal(l, t) => {
+        TypeExpr::Univ(h, t) => {
             let mut temp_type_kinds = HashMap::new();
             // insert kinds from parameters (checking validity)
-            for (name, k) in l.iter() {
+            for (name, k) in h.iter() {
                 if !valid_kind(k) {
                     return Err(TypeError::InvalidKind(format!("{}", k)));
                 }
@@ -186,12 +186,12 @@ fn check_kind<'a>(
 
             // if universal, add parameter kinds
             let mut kexpr = check_kind(t, type_kinds)?;
-            for (_, k) in l.iter() {
-                kexpr = TypeExpr::Function(Box::new(k.clone()), Box::new(kexpr));
+            for (_, k) in h.iter() {
+                kexpr = TypeExpr::Func(Box::new(k.clone()), Box::new(kexpr));
             }
 
             // restore old kinds
-            for (name, _) in l.iter() {
+            for (name, _) in h.iter() {
                 if let Some(_) = type_kinds.remove(name) {
                     if let Some(k) = temp_type_kinds.remove(name) {
                         type_kinds.insert(name, k);
@@ -202,10 +202,10 @@ fn check_kind<'a>(
         },
 
         // adds local existential type var
-        TypeExpr::Existential(l, t) => {
+        TypeExpr::Exis(h, t) => {
             let mut temp_type_kinds = HashMap::new();
             // insert kinds from parameters (checking validity)
-            for (name, k) in l.iter() {
+            for (name, k) in h.iter() {
                 if !valid_kind(k) {
                     return Err(TypeError::InvalidKind(format!("{}", k)));
                 }
@@ -218,7 +218,7 @@ fn check_kind<'a>(
             let kexpr = check_kind(t, type_kinds)?;
 
             // restore old kinds
-            for (name, _) in l.iter() {
+            for (name, _) in h.iter() {
                 if let Some(_) = type_kinds.remove(name) {
                     if let Some(k) = temp_type_kinds.remove(name) {
                         type_kinds.insert(name, k);
@@ -229,13 +229,13 @@ fn check_kind<'a>(
         },
 
         // if not singleton check all subtrees, kind must each be nullary
-        TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
+        TypeExpr::Prod(h) | TypeExpr::Sum(h) => {
             // singleton is always same kind as nested
-            if let Ok((_, t)) = l.iter().exactly_one() {
+            if let Ok((_, t)) = h.iter().exactly_one() {
                 return check_kind(t, type_kinds);
             }
 
-            for (_, t) in l.into_iter() {
+            for (_, t) in h.into_iter() {
                 if check_kind(t, type_kinds)? != *KIND_0 {
                     return Err(TypeError::MustNullKind(format!("{}", t)));
                 }
@@ -244,7 +244,7 @@ fn check_kind<'a>(
         },
 
         // check both subtrees, kind must each be nullary
-        TypeExpr::Function(t1, t2) => {
+        TypeExpr::Func(t1, t2) => {
             if check_kind(t1, type_kinds)? != *KIND_0 {
                 return Err(TypeError::MustNullKind(format!("{}", t1)));
             }
@@ -262,8 +262,8 @@ fn valid_kind(kexpr: &TypeExpr) -> bool {
         return true;
     }
     return match kexpr {
-        TypeExpr::Function(k1, k2) => valid_kind(k1) && valid_kind(k2),
-        TypeExpr::Prod(l) | TypeExpr::Sum(l) => l.iter()
+        TypeExpr::Func(k1, k2) => valid_kind(k1) && valid_kind(k2),
+        TypeExpr::Prod(h) | TypeExpr::Sum(h) => h.iter()
             .exactly_one()
             .map(|(_, k)| valid_kind(k))
             .unwrap_or(false),
@@ -335,9 +335,9 @@ fn get_type_deps<'a>(
         },
 
         // adds locally-defined type vars
-        TypeExpr::Universal(l, t) | TypeExpr::Existential(l, t) => {
+        TypeExpr::Univ(h, t) | TypeExpr::Exis(h, t) => {
             let mut temp_vars = Vec::new();
-            for (s, _) in l.iter() {
+            for (s, _) in h.iter() {
                 // if s is new in vars, need to remember to remove
                 if vars.insert(s) {
                     temp_vars.push(s);
@@ -352,19 +352,19 @@ fn get_type_deps<'a>(
         },
 
         // must check all subtrees
-        TypeExpr::Prod(l) | TypeExpr::Sum(l) => {
-            if l.len() == 0 {
+        TypeExpr::Prod(h) | TypeExpr::Sum(h) => {
+            if h.len() == 0 {
                 return HashSet::new();
             }
             let mut out = HashSet::new();
-            for (_, t) in l.into_iter() {
+            for (_, t) in h.into_iter() {
                 out.extend(get_type_deps(t, vars));
             }
             return out;
         },
 
         // must check all subtrees
-        TypeExpr::Function(t1, t2) => {
+        TypeExpr::Func(t1, t2) => {
             let mut out = get_type_deps(t1, vars);
             out.extend(get_type_deps(t2, vars));
             return out;
@@ -475,7 +475,7 @@ mod tests {
             &mut HashMap::from([
                 ("D", KIND_0.clone()),
             ]),
-        ).unwrap() == TypeExpr::Function(
+        ).unwrap() == TypeExpr::Func(
             Box::new(KIND_2.clone()),
             Box::new(KIND_1.clone()),
         ));

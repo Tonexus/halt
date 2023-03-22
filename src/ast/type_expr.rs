@@ -6,25 +6,26 @@ use std::{
     hash::{Hash, Hasher},
 };
 
+use itertools::Itertools;
 use lazy_static::lazy_static;
 
 use super::super::{misc::*, error::*};
 
 lazy_static! {
     pub static ref KIND_0: TypeExpr<'static> = TypeExpr::Variable("Type");
-    pub static ref KIND_1: TypeExpr<'static> = TypeExpr::Function(Box::new(KIND_0.clone()), Box::new(KIND_0.clone()));
-    pub static ref KIND_2: TypeExpr<'static> = TypeExpr::Function(Box::new(KIND_0.clone()), Box::new(KIND_1.clone()));
+    pub static ref KIND_1: TypeExpr<'static> = TypeExpr::Func(Box::new(KIND_0.clone()), Box::new(KIND_0.clone()));
+    pub static ref KIND_2: TypeExpr<'static> = TypeExpr::Func(Box::new(KIND_0.clone()), Box::new(KIND_1.clone()));
 }
 
 #[derive(Debug, Clone)]
 pub enum TypeExpr<'a> {
     Variable(&'a str),
     TypeParams(Box<TypeExpr<'a>>, Vec<TypeExpr<'a>>),
-    Universal(Vec<(&'a str, TypeExpr<'a>)>, Box<TypeExpr<'a>>),
-    Existential(Vec<(&'a str, TypeExpr<'a>)>, Box<TypeExpr<'a>>),
-    Prod(Vec<(&'a str, TypeExpr<'a>)>),
-    Sum(Vec<(&'a str, TypeExpr<'a>)>),
-    Function(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
+    Univ(HashMap<&'a str, TypeExpr<'a>>, Box<TypeExpr<'a>>),
+    Exis(HashMap<&'a str, TypeExpr<'a>>, Box<TypeExpr<'a>>),
+    Prod(HashMap<&'a str, TypeExpr<'a>>),
+    Sum(HashMap<&'a str, TypeExpr<'a>>),
+    Func(Box<TypeExpr<'a>>, Box<TypeExpr<'a>>),
 }
 
 impl PartialEq for TypeExpr<'_> {
@@ -38,9 +39,9 @@ impl PartialEq for TypeExpr<'_> {
         ) -> bool {
             match (one, two) {
                 // if singleton, may strip
-                (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
-                    | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
-                    if let [(FIRST, t2)] = l.as_slice() {
+                (TypeExpr::Prod(h), t1) | (TypeExpr::Sum(h), t1)
+                    | (t1, TypeExpr::Prod(h)) | (t1, TypeExpr::Sum(h)) => {
+                    if let Ok((&FIRST, t2)) = h.iter().exactly_one() {
                         return inner(t1, t2, vars);
                     }
                 },
@@ -66,10 +67,10 @@ impl PartialEq for TypeExpr<'_> {
                 },
 
                 // same quantifier
-                (TypeExpr::Universal(l1, t1), TypeExpr::Universal(l2, t2))
-                    | (TypeExpr::Existential(l1, t1), TypeExpr::Existential(l2, t2)) => {
+                (TypeExpr::Univ(h1, t1), TypeExpr::Univ(h2, t2))
+                    | (TypeExpr::Exis(h1, t1), TypeExpr::Exis(h2, t2)) => {
                     let mut temp_vars = HashMap::new();
-                    for ((s1, k1), (s2, k2)) in l1.iter().zip(l2.iter()) {
+                    for ((s1, k1), (s2, k2)) in h1.iter().zip(h2.iter()) {
                         // kinds must be same
                         if k1 != k2 {
                             return false;
@@ -90,7 +91,7 @@ impl PartialEq for TypeExpr<'_> {
                     }
 
                     // otherwise, restore old vars
-                    for ((s1, _), (s2, _)) in l1.iter().zip(l2.iter()) {
+                    for ((s1, _), (s2, _)) in h1.iter().zip(h2.iter()) {
                         if let Some(_) = vars.remove(s1) {
                             if let Some(s) = temp_vars.remove(s1) {
                                 vars.insert(s1, s);
@@ -106,16 +107,17 @@ impl PartialEq for TypeExpr<'_> {
                 }
 
                 // same types and fields
-                (TypeExpr::Prod(l1), TypeExpr::Prod(l2))
-                    | (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => {
-                        return l1.iter().zip(l2.iter())
+                // ORDER of keys may be bad
+                (TypeExpr::Prod(h1), TypeExpr::Prod(h2))
+                    | (TypeExpr::Sum(h1), TypeExpr::Sum(h2)) => {
+                        return h1.iter().zip(h2.iter())
                             .fold(true, |a, ((s1, t1), (s2, t2))|
                                 a && (s1 == s2) && inner(t1, t2, vars)
                             );
                     },
 
                 // same params and returns
-                (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) => {
+                (TypeExpr::Func(t1, t2), TypeExpr::Func(t3, t4)) => {
                     return inner(t1, t3, vars) && inner(t2, t4, vars);
                 }
 
@@ -138,8 +140,8 @@ impl Hash for TypeExpr<'_> {
         fn inner<'a, H: Hasher>(texpr: &'a TypeExpr, state: &mut H, vars: &mut HashSet<&'a str>) {
             // if singleton, may strip
             match texpr {
-                TypeExpr::Prod(l) | TypeExpr::Sum(l)  => {
-                    if let [(FIRST, t)] = l.as_slice() {
+                TypeExpr::Prod(h) | TypeExpr::Sum(h)  => {
+                    if let Ok((&FIRST, t)) = h.iter().exactly_one() {
                         inner(t, state, vars);
                         return;
                     }
@@ -166,10 +168,10 @@ impl Hash for TypeExpr<'_> {
 
                 // same quantifier TODO may have diff param names but still eq
                 // (also effects var, since might be a local var)
-                TypeExpr::Universal(l, t) => {
+                TypeExpr::Univ(h, t) => {
                     2.hash(state);
                     let mut temp_vars = Vec::new();
-                    for (s, k) in l.iter() {
+                    for (s, k) in h.iter() {
                         // if s is new in vars, need to remember to remove
                         if vars.insert(s) {
                             temp_vars.push(s);
@@ -182,10 +184,10 @@ impl Hash for TypeExpr<'_> {
                     }
                 },
 
-                TypeExpr::Existential(l, t) => {
+                TypeExpr::Exis(h, t) => {
                     3.hash(state);
                     let mut temp_vars = Vec::new();
-                    for (s, k) in l.iter() {
+                    for (s, k) in h.iter() {
                         // if s is new in vars, need to remember to remove
                         if vars.insert(s) {
                             temp_vars.push(s);
@@ -198,24 +200,24 @@ impl Hash for TypeExpr<'_> {
                     }
                 },
 
-                TypeExpr::Prod(l) => {
+                TypeExpr::Prod(h) => {
                     4.hash(state);
-                    for (s, t) in l.iter() {
+                    for (s, t) in h.iter() {
                         s.hash(state);
                         inner(t, state, vars);
                     }
                 },
 
-                TypeExpr::Sum(l) => {
+                TypeExpr::Sum(h) => {
                     5.hash(state);
-                    for (s, t) in l.iter() {
+                    for (s, t) in h.iter() {
                         s.hash(state);
                         inner(t, state, vars);
                     }
                 },
 
                 // same params and returns
-                TypeExpr::Function(t1, t2) => {
+                TypeExpr::Func(t1, t2) => {
                     6.hash(state);
                     inner(t1, state, vars);
                     inner(t2, state, vars);
@@ -251,11 +253,11 @@ impl Display for TypeExpr<'_> {
                 write!(f, "}}")?;
             },
 
-            TypeExpr::Universal(l, t) => {
+            TypeExpr::Univ(h, t) => {
                 // print quantifier
                 write!(f, "!")?;
                 // print type vars and their kinds
-                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
+                h.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
                     .and_then(|first| {
                         if !first {
                             write!(f, ", ")?;
@@ -268,11 +270,11 @@ impl Display for TypeExpr<'_> {
                 write!(f, " . {}", *t)?;
             },
 
-            TypeExpr::Existential(l, t) => {
+            TypeExpr::Exis(h, t) => {
                 // print quantifier
                 write!(f, "?")?;
                 // print type vars and their kinds
-                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
+                h.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, k)| a
                     .and_then(|first| {
                         if !first {
                             write!(f, ", ")?;
@@ -285,10 +287,10 @@ impl Display for TypeExpr<'_> {
                 write!(f, " . {}", *t)?;
             },
 
-            TypeExpr::Prod(l) => {
+            TypeExpr::Prod(h) => {
                 write!(f, "(")?;
                 // print all contents
-                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
+                h.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
                     .and_then(|first| {
                         if !first {
                             write!(f, ", ")?;
@@ -300,10 +302,10 @@ impl Display for TypeExpr<'_> {
                 write!(f, ")")?;
             },
 
-            TypeExpr::Sum(l) => {
+            TypeExpr::Sum(h) => {
                 write!(f, "[")?;
                 // print all contents
-                l.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
+                h.iter().fold(Ok(true), |a: Result<_, fmt::Error>, (s, t)| a
                     .and_then(|first| {
                         if !first {
                             write!(f, ", ")?;
@@ -315,7 +317,7 @@ impl Display for TypeExpr<'_> {
                 write!(f, "]")?;
             },
 
-            TypeExpr::Function(t1, t2) => {
+            TypeExpr::Func(t1, t2) => {
                 write!(f, "{} -> {}", *t1, *t2)?;
             },
         }
@@ -340,9 +342,9 @@ fn unify<'a> (
     ) -> Result<TypeExpr<'a>, TypeError> {
         match (one, two) {
             // if singleton, may strip
-            (TypeExpr::Prod(l), t1) | (TypeExpr::Sum(l), t1)
-                | (t1, TypeExpr::Prod(l)) | (t1, TypeExpr::Sum(l)) => {
-                if let [(FIRST, t2)] = l.as_slice() {
+            (TypeExpr::Prod(h), t1) | (TypeExpr::Sum(h), t1)
+                | (t1, TypeExpr::Prod(h)) | (t1, TypeExpr::Sum(h)) => {
+                if let Ok((&FIRST, t2)) = h.iter().exactly_one() {
                     return inner(t1, t2, glb_ctx, one_ctx, two_ctx);
                 }
             },
@@ -408,33 +410,33 @@ fn unify<'a> (
             }*/
 
             // same types and fields
-            (TypeExpr::Prod(l1), TypeExpr::Prod(l2)) => {
-                let mut l3 = Vec::new();
-                for ((s1, t1), (s2, t2)) in l1.iter().zip(l2.iter()) {
+            (TypeExpr::Prod(h1), TypeExpr::Prod(h2)) => {
+                let mut out = HashMap::new();
+                for ((s1, t1), (s2, t2)) in h1.iter().zip(h2.iter()) {
                     // TODO product down-coercion
                     if s1 != s2 {
                         return Err(TypeError::DefaultErr);
                     }
-                    l3.push((*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?));
+                    out.insert(*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?);
                 }
-                return Ok(TypeExpr::Prod(l3));
+                return Ok(TypeExpr::Prod(out));
             },
 
-            (TypeExpr::Sum(l1), TypeExpr::Sum(l2)) => {
-                let mut l3 = Vec::new();
-                for ((s1, t1), (s2, t2)) in l1.iter().zip(l2.iter()) {
+            (TypeExpr::Sum(h1), TypeExpr::Sum(h2)) => {
+                let mut out = HashMap::new();
+                for ((s1, t1), (s2, t2)) in h1.iter().zip(h2.iter()) {
                     // TODO sum up-coercion
                     if s1 != s2 {
                         return Err(TypeError::DefaultErr);
                     }
-                    l3.push((*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?));
+                    out.insert(*s1, inner(t1, t2, glb_ctx, one_ctx, two_ctx)?);
                 }
-                return Ok(TypeExpr::Sum(l3));
+                return Ok(TypeExpr::Sum(out));
             },
 
             // same params and returns
-            (TypeExpr::Function(t1, t2), TypeExpr::Function(t3, t4)) => {
-                return Ok(TypeExpr::Function(
+            (TypeExpr::Func(t1, t2), TypeExpr::Func(t3, t4)) => {
+                return Ok(TypeExpr::Func(
                     Box::new(inner(t1, t3, glb_ctx, one_ctx, two_ctx)?),
                     Box::new(inner(t2, t4, glb_ctx, one_ctx, two_ctx)?),
                 ));
@@ -545,3 +547,4 @@ mod tests {
         assert!(h1 == h2);
     }
 }
+

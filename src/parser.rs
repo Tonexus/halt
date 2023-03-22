@@ -1,5 +1,7 @@
 // parser for halt. uses peg
 
+use std::collections::HashMap;
+
 use super::ast::*;
 use super::misc::*;
 
@@ -193,12 +195,12 @@ peg::parser!{
         pub rule type_expr() -> TypeExpr<'input> = precedence!{
             // function type is only binary op
             t1: @ _ "->" _ t2: (@) {
-                TypeExpr::Function(Box::new(t1), Box::new(t2))
+                TypeExpr::Func(Box::new(t1), Box::new(t2))
             }
             --
             // declare new universal or existential type variable
             "!" _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
-                TypeExpr::Universal(
+                TypeExpr::Univ(
                     l.into_iter()
                         .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
                         .collect(),
@@ -207,7 +209,7 @@ peg::parser!{
             }
             // declare new universal or existential type variable
             "?" _ l: (opt_kinded_type_name() ++ (_ "," _) ) _ "." _ t: @ {
-                TypeExpr::Existential(
+                TypeExpr::Exis(
                     l.into_iter()
                         .map(|(n, o)| (n, o.unwrap_or(KIND_0.clone())))
                         .collect(),
@@ -231,12 +233,12 @@ peg::parser!{
         // product type, implicit fields, explicit fields, or empty
         rule prod_type() -> TypeExpr<'input> =
             "(" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ ")" {
-                TypeExpr::Prod(l)
+                TypeExpr::Prod(l.into_iter().collect())
             }
         // sum type, implicit fields, explicit fields, or empty
         rule sum_type() -> TypeExpr<'input> =
             "[" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ "]" {
-                TypeExpr::Sum(l)
+                TypeExpr::Sum(l.into_iter().collect())
             }
 
         // *****************
@@ -456,7 +458,7 @@ peg::parser!{
         rule lit_unit_expr() -> ValueExpr<'input> =
             "(" _ ")" { ValueExpr {
                 variant: ExprVariant::Prod(Vec::new()),
-                texpr:   Some(TypeExpr::Prod(Vec::new())),
+                texpr:   Some(TypeExpr::Prod(HashMap::new())),
             }}
         // boolean literal
         rule lit_bool_expr() -> ValueExpr<'input> =
@@ -550,7 +552,7 @@ peg::parser!{
                     Some(e) => e,
                     None    => ValueExpr {
                         variant: ExprVariant::Prod(Vec::new()),
-                        texpr:   Some(TypeExpr::Prod(Vec::new())),
+                        texpr:   Some(TypeExpr::Prod(HashMap::new())),
                     },
                 }
             )}
@@ -645,11 +647,11 @@ mod tests {
             Vec::from([Definition::Type(TypeDef {
                 name:  "Foo",
                 kexpr: None,
-                texpr: TypeExpr::Universal(
-                    Vec::from([("A", KIND_0.clone())]),
-                    Box::new(TypeExpr::Prod(Vec::from([
+                texpr: TypeExpr::Univ(
+                    HashMap::from([("A", KIND_0.clone())]),
+                    Box::new(TypeExpr::Prod(HashMap::from([
                         ("_0", TypeExpr::Variable("A")),
-                        ("_1", TypeExpr::Sum(Vec::from([
+                        ("_1", TypeExpr::Sum(HashMap::from([
                             ("int", TypeExpr::Variable("Int")),
                             ("float", TypeExpr::Variable("Float")),
                         ]))),
@@ -691,8 +693,8 @@ mod tests {
     #[test]
     fn basic_type_expr_1() {
         assert_eq!(type_expr("?A. Foo{A}"), Ok(
-            TypeExpr::Existential(
-                Vec::from([("A", KIND_0.clone())]),
+            TypeExpr::Exis(
+                HashMap::from([("A", KIND_0.clone())]),
                 Box::new(
                     TypeExpr::TypeParams(
                         Box::new(TypeExpr::Variable("Foo")),
