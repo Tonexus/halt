@@ -267,6 +267,8 @@ fn satisfy<'a> (
         trgt_ctx: &mut HashMap<&'a str, (TrgtState<'a>, TypeExpr<'a>)>,
         cstr_ctx: &mut HashMap<&'a str, (CstrState<'a>, TypeExpr<'a>)>,
     ) -> Result<(), TypeError> {
+        // TODO canonicalize in separate step (also check kinds and replace params)
+        // (guarantees that variables in trgt are finalized)
         // check target for simplification
         match trgt {
             // if singleton, may strip
@@ -405,6 +407,7 @@ fn satisfy<'a> (
                 if let Some((en, _)) = trgt_ctx.get(s) {
                     match en {
                         // TODO check kinds?
+                        // TODO not allowed because univ var replaced in canonicalize step
                         // type defined with implementation, so substitute
                         TrgtState::Expr(t) => {
                             return inner(t, cstr, glbl_ctx, &mut HashMap::new(), cstr_ctx);
@@ -510,6 +513,69 @@ fn satisfy<'a> (
 
 
     return inner(trgt, cstr, ctx, &mut HashMap::new(), &mut HashMap::new());
+}
+
+// simplify type expression by unnesting singleton compositions and replacing
+// known type variables
+fn canonicalize<'a>(
+    texpr:   &TypeExpr<'a>,
+    glb_ctx: &HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
+    loc_ctx: &mut HashMap<&'a str, (Option<TypeExpr<'a>>, TypeExpr<'a>)>,
+) -> Result<(TypeExpr<'a>, TypeExpr<'a>), TypeError> {
+    const FIRST: &str = LABELS[0];
+
+    match texpr {
+        // replace variable
+        TypeExpr::Variable(s) => {
+            // check local context first
+            if let Some((o, k1)) = loc_ctx.get(s) {
+                if let Some(t1) = o {
+                    let (t2, k2) = canonicalize(t1, glb_ctx, &mut HashMap::new())?;
+                    if k1 == &k2 {
+                        return Ok((t2, k2));
+                    } else {
+                        return Err(TypeError::KindMismatch(format!("{}", t2), format!("{}", k1)));
+                    }
+                }
+                return Ok((texpr.clone(), k1.clone()));
+            }
+
+            // check global context
+            if let Some((o, k1)) = glb_ctx.get(s) {
+                if let Some(t1) = o {
+                    let (t2, k2) = canonicalize(t1, glb_ctx, &mut HashMap::new())?;
+                    if k1 == &k2 {
+                        return Ok((t2, k2));
+                    } else {
+                        return Err(TypeError::KindMismatch(format!("{}", t2), format!("{}", k1)));
+                    }
+                }
+                return Ok((texpr.clone(), k1.clone()));
+            }
+
+            // if variable not found, error
+            return Err(TypeError::DefaultErr);
+        },
+
+        // strip if singleton, otherwise canonicalize branches
+        TypeExpr::Prod(h) => {
+            if let Ok((&FIRST, t)) = h.iter().exactly_one() {
+                return canonicalize(t, glb_ctx, loc_ctx);
+            }
+        },
+
+        // strip if singleton, otherwise canonicalize branches
+        TypeExpr::Sum(h) => {
+            if let Ok((&FIRST, t)) = h.iter().exactly_one() {
+                return canonicalize(t, glb_ctx, loc_ctx);
+            }
+        },
+
+        _ => {},
+    }
+
+    // TODO temp
+    return Err(TypeError::DefaultErr);
 }
 
 #[cfg(test)]
