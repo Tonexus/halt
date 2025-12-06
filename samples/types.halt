@@ -1,4 +1,4 @@
-// Some examples of possible user defined structureal types
+// Some examples of possible user defined structural types
 
 // enums/untagged unions/sum types
 
@@ -10,13 +10,13 @@ Boolean := [
 
 // some of rust's useful basic generics
 // Res
-Result := !A, B . [
+Result := (A:: Type, B:: Type) -> [
     okay: A,
     fail: B,
 ];
 
 // Opt
-Option := !A . [
+Option := (A:: Type) -> [
     some: A,
     none: (),
 ];
@@ -30,8 +30,8 @@ Point3D := (
 );
 
 FullName := (
-    first:  Ascii{N10},
-    middle: Ascii{N10},
-    last:   Ascii{N10},
+    first:  Ascii(N10),
+    middle: Ascii(N10),
+    last:   Ascii(N10),
 );
 
