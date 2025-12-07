@@ -4,6 +4,8 @@ mod ast;
 mod error;
 mod misc;
 mod parser;
+mod new_parser;
+mod new_ast;
 //mod type_checker;
 
 use std::{env, fs::File, io::Read};
