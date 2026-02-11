@@ -18,6 +18,6 @@ Halt is a statically typed imperative language that is heavily inspired by Rust.
     - Aliasability and mutability defined per struct/tuple field
 - Array index types to reduce bounds checking (inspired by functional lenses)
 - Compile-time constant evaluation
-- Borrow checking
+- "Borrow checking" using above substructural, uniqueness, and [fractional uniqueness](https://arxiv.org/abs/2310.18166) types
 - RAII
 - Multiple allocator strategies (possibly allowing garbage collected shared pointers)
