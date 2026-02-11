@@ -9,8 +9,8 @@ Halt is a statically typed imperative language that is heavily inspired by Rust.
     - Parametric and subtype polymorphism
     	- Higher-kinded types
     - A [coeffect](https://tomasp.net/coeffects/) system, including
-    	- IO (display, file system, networking, etc.)
-	- Memory allocation
+        - IO (display, file system, networking, etc.)
+        - Memory allocation
         - Termination by default (enabling [simple static resource analysis](https://people.csail.mit.edu/meyer/meyer-ritchie.pdf))
         - Continuations
 - Aliasable XOR mutable using [substructural types](https://en.wikipedia.org/wiki/Substructural_type_system) and [uniqueness types](https://en.wikipedia.org/wiki/Uniqueness_type)
