@@ -5,13 +5,27 @@ use std::{
     collections::{HashSet, HashMap},
 };
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Expr<'a> {
+#[derive(Debug, PartialEq)]
+pub struct Def<'a> {
+    pub name:  &'a str,
     pub tier:  Option<u32>,
-    pub texpr: Option<Box<Expr<'a>>>,
-    pub var:   ExprVar<'a>,
+    // if type was annotated
+    pub texpr: Option<Expr<'a>>,
+    // rhs of definition
+    pub expr:  Expr<'a>,
+
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Expr<'a> {
+    // values are tier 0, types tier 1, kinds tier 2, etc...
+    pub min_tier: u32,
+    pub max_tier: u32,
+    pub texpr:    Option<Box<Expr<'a>>>,
+    pub var:      ExprVar<'a>,
+}
+
+// expression variant
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprVar<'a> {
     // expression is a variable
@@ -28,7 +42,7 @@ pub enum ExprVar<'a> {
     // expression is a literal function
     LFun {
         // list of parameter names and optional types
-        params: Vec<(&'a str, Option<Box<Expr<'a>>>)>,
+        params: Vec<(&'a str, Option<Expr<'a>>)>,
         // optional return type
         bodyt:  Option<Box<Expr<'a>>>,
         // function body

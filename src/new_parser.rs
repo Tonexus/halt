@@ -9,15 +9,17 @@ pub use program_parser::*;
 
 fn make_vexpr_var<'a>(s: &'a str) -> Expr<'a> {
     return Expr {
-        tier:  Some(0),
-        texpr: None,
-        var:   ExprVar::Var(s),
+        min_tier: 0,
+        max_tier: 0,
+        texpr:    None,
+        var:      ExprVar::Var(s),
     };
 }
 
 fn make_vexpr_lit_bool(b: bool) -> Expr<'static> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None, // TODO
         var:   ExprVar::LVal(LitVar::Bool(b))
     }
@@ -25,7 +27,8 @@ fn make_vexpr_lit_bool(b: bool) -> Expr<'static> {
 
 fn make_vexpr_lit_int(i: i32) -> Expr<'static> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None, // TODO
         var:   ExprVar::LVal(LitVar::Int(i))
     }
@@ -33,7 +36,8 @@ fn make_vexpr_lit_int(i: i32) -> Expr<'static> {
 
 fn make_vexpr_lit_float(f: f32) -> Expr<'static> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None, // TODO
         var:   ExprVar::LVal(LitVar::Float(f))
     }
@@ -41,7 +45,8 @@ fn make_vexpr_lit_float(f: f32) -> Expr<'static> {
 
 fn make_vexpr_lit_ascii(a: Vec<u8>) -> Expr<'static> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None, // TODO
         var:   ExprVar::LVal(LitVar::Ascii(a))
     }
@@ -49,7 +54,8 @@ fn make_vexpr_lit_ascii(a: Vec<u8>) -> Expr<'static> {
 
 fn make_vexpr_lit_u8char(c: u8) -> Expr<'static> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None, // TODO
         var:   ExprVar::LVal(LitVar::U8Char(c))
     }
@@ -57,8 +63,10 @@ fn make_vexpr_lit_u8char(c: u8) -> Expr<'static> {
 
 fn make_vexpr_unop<'a>(e: Expr<'a>, s: &'a str) -> Expr<'a> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None,
+        // unary op is actuall function application on singleton
         var:   ExprVar::LApp {
             fun:   Box::new(make_vexpr_var(s)),
             param: Box::new(e)
@@ -68,12 +76,15 @@ fn make_vexpr_unop<'a>(e: Expr<'a>, s: &'a str) -> Expr<'a> {
 
 fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
     return Expr {
-        tier:  Some(0),
+        min_tier: 0,
+        max_tier: 0,
         texpr: None,
+        // binary op is actuall function application on product
         var:   ExprVar::LApp {
             fun:   Box::new(make_vexpr_var(s)),
             param: Box::new(Expr {
-                tier:  Some(0),
+                min_tier: 0,
+                max_tier: 0,
                 texpr: None,
                 var:   ExprVar::LPro(Vec::from([
                     ("0", e1),
@@ -81,6 +92,32 @@ fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
                 ]))
             })
         }
+    };
+}
+
+fn make_vexpr_fun<'a>(
+    p: Vec<(&'a str, Option<Expr<'a>>)>,
+    o: Option<Expr<'a>>,
+    e: Expr<'a>
+) -> Expr<'a> {
+    return Expr {
+        min_tier: 0,
+        max_tier: 0,
+        texpr: None, // TODO add?
+        var:   ExprVar::LFun {
+            params: p,
+            bodyt:  o.map(Box::new),
+            body:   Box::new(e),
+        }
+    };
+}
+
+fn make_texpr_var<'a>(s: &'a str) -> Expr<'a> {
+    return Expr {
+        min_tier: 1,
+        max_tier: 9,
+        texpr:    None,
+        var:      ExprVar::Var(s),
     };
 }
 
@@ -158,10 +195,11 @@ peg::parser!{
         // MISCELLANEOUS
         // *************
 
-        /*
         // rule for type annotation
         rule type_annot() -> Expr<'input> =
-            _ ":" _ t: type_expr() {t}
+            _ ":" _ t: vexpr() {t} // TODO add more colons + count
+            // TODO pass count around parser? or save later stage?
+        /*
         // labeled type
         rule labeled_type() -> (&'input str, Expr<'input>) =
             n: label_name() t: type_annot() {(n, t)}
@@ -171,9 +209,11 @@ peg::parser!{
         // optionally kinded type name
         rule opt_kinded_type_name() -> (&'input str, Option<Expr<'input>>) =
             n: type_name() o: type_annot()? {(n, o)}
+        */
         // optionally typed value name
         rule opt_typed_value_name() -> (&'input str, Option<Expr<'input>>) =
-            n: value_name() o: type_annot()? {(n, o)}
+            n: value_name() o: type_annot()? {(n, None)} // TODO not none
+        /*
         // type list
         rule type_list() -> Vec<Expr<'input>> =
             l: (type_expr() ++ (_ "," _)) (_ ",")? {l}
@@ -244,38 +284,38 @@ peg::parser!{
         // TOP-LEVEL DEFINITIONS
         // *********************
 
-        /*
         // collect all top-level definitions
-        pub rule defs() -> Vec<Definition<'input>> =
+        pub rule defs() -> Vec<Def<'input>> =
             _ d: (def() **  _) _ {d}
-        rule def() -> Definition<'input> = type_def() / const_def()
+        rule def() -> Def<'input> = type_def() / val_def()
         // definition of a type
-        rule type_def() -> Definition<'input> =
-            n: opt_kinded_type_name() _ ":=" _ t: type_expr() _ ";" {
-                Definition::Type(TypeDef {
-                    name:  n.0,
-                    kexpr: n.1,
-                    texpr: t,
-                })
+        rule type_def() -> Def<'input> =
+            n: type_name() _ ":=" _ t: vexpr() _ ";" {
+                Def {
+                    name:  n,
+                    tier:  None,
+                    texpr: None, // TODO allow annotation
+                    expr:  t,
+                }
             }
         // definition of a constant variable
-        rule const_def() -> Definition<'input> =
-            n: opt_typed_value_name() _ ":=" _ v: value_expr() _ ";" {
-                Definition::Const(ConstDef{
-                    name:  n.0,
-                    texpr: n.1,
-                    vexpr: v,
-                })
+        rule val_def() -> Def<'input> =
+            n: value_name() _ ":=" _ v: vexpr() _ ";" {
+                Def{
+                    name:  n,
+                    tier:  Some(0),
+                    texpr: None, // TODO allow annotation
+                    expr:  v,
+                }
             }
-          */
 
         // ****************
         // TYPE EXPRESSIONS
         // ****************
 
-        /*
         // type expressions // TODO add plus and mul for combining sums and products?
-        pub rule type_expr() -> TypeExpr<'input> = precedence!{
+        pub rule texpr() -> Expr<'input> = precedence!{
+            /*
             // function type is only binary op
             t1: @ _ "->" _ t2: (@) {
                 TypeExpr::Func(Box::new(t1), Box::new(t2))
@@ -305,14 +345,18 @@ peg::parser!{
                 TypeExpr::TypeParams(Box::new(t), l)
             }
             --
+            */
             // atoms
-            t: variable_type() {t}
+            t: texpr_var() {t}
+            /*
             t: prod_type() {t}
             t: sum_type() {t}
+            */
         }
         // type variable
-        rule variable_type() -> TypeExpr<'input> =
-            n: type_name() {TypeExpr::Variable(n)}
+        rule texpr_var() -> Expr<'input> =
+            n: type_name() {make_texpr_var(n)}
+        /*
         // product type, implicit fields, explicit fields, or empty
         rule prod_type() -> TypeExpr<'input> =
             "(" _ l: (type_list_labeled() / labeled_type_list() / empty_type()) _ ")" {
@@ -422,8 +466,8 @@ peg::parser!{
             /*
             e: prod_expr() {e}
             e: sum_expr() {e}
-            e: closure_expr() {e}
             */
+            e: closure_expr() {e}
         }
 
         // any literal value
@@ -458,25 +502,16 @@ peg::parser!{
                 (!is_kw_value(n) && !is_kw_statement(n))
                     .then_some(make_vexpr_var(n)).ok_or("value variable")
             }
-        /*
         // closure expression (functions are closures with no closed-over vars)
-        rule closure_expr() -> ValueExpr<'input> =
-            o1: ("!" _ l: (type_name() ++ (_ ","  _)) _ "." _ {l})?
+        rule closure_expr() -> Expr<'input> =
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
             _ "->" _
-            o2: (t: type_expr() _ ":" _ {t})?
-            b: block() { ValueExpr {
-                variant:   ExprVariant::Closure {
-                    params:      l,
-                    type_params: match o1 {
-                        Some(l) => l,
-                        None    => Vec::new(),
-                    },
-                    returns:     o2,
-                    body:        b,
-                },
-                texpr: None,
-            }}
+            o: (t: vexpr() _ ":" _ {t})? // optional type, normal format
+            b: vexpr() {
+            //b: block() {
+                make_vexpr_fun(l, None, b)
+            }
+        /*
         // product expression TODO: allow typed fields?
         rule prod_expr() -> ValueExpr<'input> =
             "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
@@ -632,6 +667,18 @@ mod tests {
                     "_neg"
                 ),
                 "_eq"
+            ))
+        );
+    }
+
+    #[test]
+    fn basic_vexpr_4(){
+        assert_eq!(
+            vexpr("(a, b,) -> 5"),
+            Ok(make_vexpr_fun(
+                [("a", None), ("b", None)].to_vec(),
+                None,
+                make_vexpr_lit_int(5),
             ))
         );
     }

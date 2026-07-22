@@ -21,7 +21,7 @@ fn main() -> Result<()> {
     let mut contents = String::new();
     file.read_to_string(&mut contents).context("Failed to read file")?;
 
-    let defs = parser::defs(&contents).map_err(|e| CompileError::from(e))?;
+    let defs = new_parser::defs(&contents).map_err(|e| CompileError::from(e))?;
     //type_checker::check_defs(defs)?;
     println!("Program ok!");
     return Ok(());
