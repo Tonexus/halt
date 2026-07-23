@@ -95,6 +95,18 @@ fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
     };
 }
 
+fn make_expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
+    return Expr {
+        min_tier: 0,
+        max_tier: 9,
+        texpr:    None,
+        var:      ExprVar::LApp {
+            fun:   Box::new(e1),
+            param: Box::new(e2)
+        }
+    }
+}
+
 fn make_vexpr_fun<'a>(
     p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
     o: Option<(u32, Expr<'a>)>,
@@ -442,23 +454,12 @@ peg::parser!{
             }
             e: @ _ "$" {
                 make_vexpr_unop(e, "_deref")
-            }/*
+            }
             --
-            // function application (right associative) with optional type params
-            e1: @ _ o: ("{" _ l: type_list() _ "}" _ {l})? !['+' | '-'] e2: (@) { ValueExpr {
-                variant: ExprVariant::BinOp {
-                    op:        BinOpExpr::Call(
-                        match o {
-                            Some(l) => l,
-                            None    => Vec::new(),
-                        }
-                    ),
-                    subexpr_1: Box::new(e1),
-                    subexpr_2: Box::new(e2),
-                },
-                texpr: None,
-            }}
-            */
+            // function application (right associative)
+            e1: @ _ e2: (@) {
+                make_expr_app(e1, e2)
+            }
             --
             // atoms / non-direct recursion
             e: vexpr_lit() {e}
@@ -468,7 +469,7 @@ peg::parser!{
             e: prod_expr() {e}
             e: sum_expr() {e}
             */
-            e: closure_expr() {e}
+            e: vexpr_fun() {e}
         }
 
         // any literal value
@@ -506,8 +507,8 @@ peg::parser!{
         // type variable
         rule texpr_var() -> Expr<'input> =
             n: type_name() {make_texpr_var(n)}
-        // closure expression (functions are closures with no closed-over vars)
-        rule closure_expr() -> Expr<'input> =
+        // function expression (also closures)
+        rule vexpr_fun() -> Expr<'input> =
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
             _ "->"
             o: type_annot_rev()? _ // optional type, normal format
@@ -690,7 +691,7 @@ mod tests {
     #[test]
     fn basic_vexpr_5(){
         assert_eq!(
-            vexpr("(a:: U32) -> Str: 7 + a"), // TODO fix output type
+            vexpr("(a:: U32) -> Str: 7 + a"),
             Ok(make_vexpr_fun(
                 [("a", Some((1, make_texpr_var("U32"))))].to_vec(),
                 Some((0, make_texpr_var("Str"))),
@@ -698,6 +699,23 @@ mod tests {
                     make_vexpr_lit_int(7),
                     make_vexpr_var("a"),
                     "_add"
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn basic_vexpr_6(){
+        assert_eq!(
+            vexpr("foo bar baz 10"),
+            Ok(make_expr_app(
+                make_vexpr_var("foo"),
+                make_expr_app(
+                    make_vexpr_var("bar"),
+                    make_expr_app(
+                        make_vexpr_var("baz"),
+                        make_vexpr_lit_int(10)
+                    )
                 )
             ))
         );
