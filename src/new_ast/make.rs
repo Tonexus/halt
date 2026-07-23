@@ -137,7 +137,7 @@ pub fn expr_sum<'a>(s: &'a str, e: Expr<'a>) -> Expr<'a> {
 }
 
 pub fn vexpr_fun<'a>(
-    p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
+    l: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
     o: Option<(u32, Expr<'a>)>,
     e: Expr<'a>
 ) -> Expr<'a> {
@@ -146,9 +146,27 @@ pub fn vexpr_fun<'a>(
         max_tier: 0,
         texpr:    None,
         var:      ExprVar::Fun {
-            params: p,
+            params: l,
             bodyt:  o.map(Box::new),
             body:   Box::new(e),
+        }
+    };
+}
+
+// TODO fix
+pub fn vexpr_let<'a>(
+    l: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
+    e: Expr<'a>
+) -> Expr<'a> {
+    return Expr {
+        min_tier: 0,
+        max_tier: 0,
+        texpr:    None,
+        var:      ExprVar::Let {
+            vars: l.into_iter().map(
+                |(s, t)| LetBind{name: s, annot: t.map(|(n, e)| TypeAnnot{tier: n, expr: e}), value: None}
+            ).collect(),
+            body: Box::new(e),
         }
     };
 }

@@ -55,9 +55,7 @@ pub enum ExprVar<'a> {
     Let {
         // list of variable names and optional types
         // TODO allow value
-        vars:  Vec<(&'a str, Option<Box<Expr<'a>>>)>,
-        // optiobaly body type
-        bodyt: Option<Box<Expr<'a>>>,
+        vars:  Vec<LetBind<'a>>,
         // body of let expression
         body:  Box<Expr<'a>>,
     },
@@ -71,6 +69,25 @@ pub enum ExprVar<'a> {
     TPro(HashMap<&'a str, Expr<'a>>),
     // expression is the type of a sum
     TSum(HashMap<&'a str, Expr<'a>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LetBind<'a> {
+    pub name:  &'a str,
+    pub annot: Option<TypeAnnot<'a>>,
+    pub value: Option<Expr<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunArg<'a> {
+    pub name:  &'a str,
+    pub annot: Option<TypeAnnot<'a>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TypeAnnot<'a> {
+    pub tier: u32,
+    pub expr: Expr<'a>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

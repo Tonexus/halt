@@ -306,6 +306,7 @@ peg::parser!{
             }
             --
             // exponent and logarithm TODO: check associativity
+            // TODO log as | instead, @ as access?
             e1: (@) _ "^" _ e2: @ {
                 make::vexpr_binop(e1, e2, "_pow")
             }
@@ -334,6 +335,7 @@ peg::parser!{
             e: vexpr_var() {e}
             e: texpr_var() {e}
             e: vexpr_fun() {e}
+            e: expr_let() {e}
             e: expr_prod() {e}
             e: expr_sum() {e}
         }
@@ -376,12 +378,17 @@ peg::parser!{
         // function expression (also closures)
         // distinguish vexpr func from expr func as vexpr allows imperative block
         rule vexpr_fun() -> Expr<'input> =
-            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
-            _ "->"
-            o: type_annot_rev()? _ // optional type, normal format
+            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->"
+            o: type_annot_rev()? _ // TODO only needed for block/vexpr version?
             b: vexpr() {
-            //b: block() {
+            //b: block() { // TODO
                 make::vexpr_fun(l, o, b)
+            }
+        // let expression TODO allow optionally assigning var to expression as well
+        rule expr_let() -> Expr<'input> =
+            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "|>"
+            e: vexpr() {
+                make::vexpr_let(l, e)
             }
         // product expression
         rule expr_prod() -> Expr<'input> =
