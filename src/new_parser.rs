@@ -97,7 +97,7 @@ fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
 
 fn make_vexpr_fun<'a>(
     p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
-    o: Option<Expr<'a>>,
+    o: Option<(u32, Expr<'a>)>,
     e: Expr<'a>
 ) -> Expr<'a> {
     return Expr {
@@ -195,10 +195,13 @@ peg::parser!{
         // MISCELLANEOUS
         // *************
 
+        // TODO whitespace after?
         // rule for type annotation
         rule type_annot() -> (u32, Expr<'input>) =
-            _ l: (":"*<1, 9>) _ t: vexpr() {(l.len() as u32 - 1, t)} // TODO add more colons + count
-            // TODO pass count around parser? or save later stage?
+            _ l: (":"*<1, 9>) _ t: vexpr() {(l.len() as u32 - 1, t)}
+        // rule for reverse type annotation (function output)
+        rule type_annot_rev() -> (u32, Expr<'input>) =
+            _ t: vexpr() _ l: (":"*<1, 9>) {(l.len() as u32 - 1, t)}
         /*
         // labeled type
         rule labeled_type() -> (&'input str, Expr<'input>) =
@@ -506,11 +509,11 @@ peg::parser!{
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> Expr<'input> =
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
-            _ "->" _
-            o: (t: vexpr() _ ":" _ {t})? // optional type, normal format
+            _ "->"
+            o: type_annot_rev()? _ // optional type, normal format
             b: vexpr() {
             //b: block() {
-                make_vexpr_fun(l, None, b)
+                make_vexpr_fun(l, o, b)
             }
         /*
         // product expression TODO: allow typed fields?
@@ -680,6 +683,22 @@ mod tests {
                 [("a", None), ("b", None)].to_vec(),
                 None,
                 make_vexpr_lit_int(5),
+            ))
+        );
+    }
+
+    #[test]
+    fn basic_vexpr_5(){
+        assert_eq!(
+            vexpr("(a:: U32) -> Str: 7 + a"), // TODO fix output type
+            Ok(make_vexpr_fun(
+                [("a", Some((1, make_texpr_var("U32"))))].to_vec(),
+                Some((0, make_texpr_var("Str"))),
+                make_vexpr_binop(
+                    make_vexpr_lit_int(7),
+                    make_vexpr_var("a"),
+                    "_add"
+                )
             ))
         );
     }

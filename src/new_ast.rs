@@ -47,7 +47,7 @@ pub enum ExprVar<'a> {
         // list of parameter names and optional types
         params: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
         // optional return type
-        bodyt:  Option<Box<Expr<'a>>>,
+        bodyt:  Option<Box<(u32, Expr<'a>)>>,
         // function body
         // TODO: allow function body to be imperative for non-type function
         body:   Box<Expr<'a>>,
