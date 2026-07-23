@@ -92,14 +92,8 @@ peg::parser!{
         // labeled type
         rule labeled_type() -> (&'input str, Expr<'input>) =
             n: label_name() t: type_annot() {(n, t)}
-        // labeled value
-        rule labeled_value() -> (&'input str, Expr<'input>) =
-            n: label_name() _ "=" _ v: value_expr() {(n, v)}
-        // optionally kinded type name
-        rule opt_kinded_type_name() -> (&'input str, Option<Expr<'input>>) =
-            n: type_name() o: type_annot()? {(n, o)}
         */
-        // optionally typed value name
+        // optionally typed value name // TODO used as param names, allow types as params
         rule opt_typed_value_name() -> (&'input str, Option<(u32, Expr<'input>)>) =
             n: value_name() o: type_annot()? {(n, o)}
         /*
@@ -122,15 +116,10 @@ peg::parser!{
         // no types in type list
         rule empty_type() -> Vec<(&'input str, Expr<'input>)> =
             "" {Vec::new()}
-        // value list
-        rule value_list() -> Vec<Expr<'input>> =
-            l: (value_expr() ++ (_ "," _)) (_ ",")? {l}
-        // labeled value list
-        rule labeled_value_list() -> Vec<(&'input str, Expr<'input>)> =
-            l: (labeled_value() ++ (_ "," _)) (_ ",")? {l}
-        // value list with implicit labels
-        rule value_list_labeled() -> Vec<(&'input str, Expr<'input>)> =
-            l: value_list() {?
+        */
+        // value list with implicit labels (instantiating tuple)
+        rule tuple_value_list() -> Vec<(&'input str, Expr<'input>)> =
+            l: (vexpr() ++ (_ "," _)) (_ ",")? {?
                 if l.len() > 10 {
                     return Err("Too many labels");
                 }
@@ -138,10 +127,15 @@ peg::parser!{
                     |(n, v)| (LABELS[n], v)
                 ).collect());
             }
+        // label with value (instantiating a product)
+        rule labeled_value() -> (&'input str, Expr<'input>) =
+            n: label_name() _ "=" _ v: vexpr() {(n, v)}
+        // labeled value list (instantiating product)
+        rule prod_value_list() -> Vec<(&'input str, Expr<'input>)> =
+            l: (labeled_value() ++ (_ "," _)) (_ ",")? {l}
         // no values in value list
-        rule empty_value() -> Vec<(&'input str, Expr<'input>)> =
+        rule empty_value_list() -> Vec<(&'input str, Expr<'input>)> =
             "" {Vec::new()}
-        */
 
         // ************************
         // PROGRAMMER-DEFINED NAMES
@@ -339,11 +333,9 @@ peg::parser!{
             e: vexpr_lit() {e}
             e: vexpr_var() {e}
             e: texpr_var() {e}
-            /*
+            e: vexpr_fun() {e}
             e: prod_expr() {e}
             e: sum_expr() {e}
-            */
-            e: vexpr_fun() {e}
         }
 
         // any literal value
@@ -391,19 +383,17 @@ peg::parser!{
             //b: block() {
                 make::vexpr_fun(l, o, b)
             }
-        /*
         // product expression
-        rule prod_expr() -> ValueExpr<'input> =
-            "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
-                make_expr_pro(l)
+        rule prod_expr() -> Expr<'input> =
+            "(" _ l: (tuple_value_list() / prod_value_list() / empty_value_list()) _ ")" {
+                make::expr_prod(l)
             }
         // choice expression
         // tagged expression
-        rule sum_expr() -> ValueExpr<'input> =
+        rule sum_expr() -> Expr<'input> =
             "[" _ e: labeled_value() _ "]" {
-                make_expr_sum(e.0, e.1)
+                make::expr_sum(e.0, e.1)
             }
-        */
         /* TODO UFCS
         rule ufcs_call_exp() -> Expression
             = e1: exp_specifier "." n: var_name() e2: tuple_exp() {
@@ -548,11 +538,15 @@ mod tests {
     #[test]
     fn basic_vexpr_4(){
         assert_eq!(
-            vexpr("(a, b,) -> 5"),
+            vexpr("(a, b,) -> (c, d: U8) -> 5"),
             Ok(make::vexpr_fun(
                 [("a", None), ("b", None)].to_vec(),
                 None,
-                make::vexpr_lit_int(5),
+                make::vexpr_fun(
+                    [("c", None), ("d", Some((0, make::texpr_var("U8"))))].to_vec(),
+                    None,
+                    make::vexpr_lit_int(5),
+                )
             ))
         );
     }
@@ -587,6 +581,19 @@ mod tests {
                     )
                 )
             ))
+        );
+    }
+
+    #[test]
+    fn basic_vexpr_7(){
+        assert_eq!(
+            vexpr("(foo, [bar = 1], baz, ())"),
+            Ok(make::expr_prod([
+                (LABELS[0], make::vexpr_var("foo")),
+                (LABELS[1], make::expr_sum("bar", make::vexpr_lit_int(1))),
+                (LABELS[2], make::vexpr_var("baz")),
+                (LABELS[3], make::expr_prod(Vec::new()))
+            ].to_vec()))
         );
     }
 

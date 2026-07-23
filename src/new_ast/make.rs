@@ -8,7 +8,22 @@ pub fn vexpr_var<'a>(s: &'a str) -> Expr<'a> {
         min_tier: 0,
         max_tier: 0,
         texpr:    None,
-        var:      ExprVar::Var(s),
+        var:      ExprVar::Var {
+            name:    s,
+            is_type: false
+        },
+    };
+}
+
+pub fn texpr_var<'a>(s: &'a str) -> Expr<'a> {
+    return Expr {
+        min_tier: 1,
+        max_tier: MAX_TIER,
+        texpr:    None,
+        var:      ExprVar::Var {
+            name:    s,
+            is_type: true
+        },
     };
 }
 
@@ -103,7 +118,7 @@ pub fn expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
     }
 }
 
-pub fn expr_pro<'a>(l: Vec<(&'a str, Expr<'a>)>) -> Expr<'a> {
+pub fn expr_prod<'a>(l: Vec<(&'a str, Expr<'a>)>) -> Expr<'a> {
     return Expr {
         min_tier: 0,
         max_tier: MAX_TIER,
@@ -138,11 +153,3 @@ pub fn vexpr_fun<'a>(
     };
 }
 
-pub fn texpr_var<'a>(s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 1,
-        max_tier: MAX_TIER,
-        texpr:    None,
-        var:      ExprVar::Var(s),
-    };
-}

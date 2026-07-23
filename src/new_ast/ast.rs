@@ -10,10 +10,8 @@ pub struct Def<'a> {
     pub name:     &'a str,
     pub min_tier: u32,
     pub max_tier: u32,
-    // if type was annotated
-    pub texpr: Option<Expr<'a>>,
-    // rhs of definition
-    pub expr:  Expr<'a>,
+    pub texpr:    Option<Expr<'a>>,
+    pub expr:     Expr<'a>,
 
 }
 
@@ -30,9 +28,10 @@ pub struct Expr<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ExprVar<'a> {
     // expression is a variable
-    Var(&'a str),
-    // expression is a type variable
-    TVar(&'a str),
+    Var {
+        name:    &'a str,
+        is_type: bool,
+    },
     // expression is a literal value
     LVal(LitVar),
     // expression is a literal application of a function
