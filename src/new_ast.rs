@@ -7,8 +7,9 @@ use std::{
 
 #[derive(Debug, PartialEq)]
 pub struct Def<'a> {
-    pub name:  &'a str,
-    pub tier:  Option<u32>,
+    pub name:     &'a str,
+    pub min_tier: u32,
+    pub max_tier: u32,
     // if type was annotated
     pub texpr: Option<Expr<'a>>,
     // rhs of definition
@@ -30,6 +31,8 @@ pub struct Expr<'a> {
 pub enum ExprVar<'a> {
     // expression is a variable
     Var(&'a str),
+    // expression is a type variable
+    TVar(&'a str),
     // expression is a literal value
     LVal(LitVar),
     // expression is a literal application of a function
@@ -42,7 +45,7 @@ pub enum ExprVar<'a> {
     // expression is a literal function
     LFun {
         // list of parameter names and optional types
-        params: Vec<(&'a str, Option<Expr<'a>>)>,
+        params: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
         // optional return type
         bodyt:  Option<Box<Expr<'a>>>,
         // function body

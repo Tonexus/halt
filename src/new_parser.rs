@@ -96,14 +96,14 @@ fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
 }
 
 fn make_vexpr_fun<'a>(
-    p: Vec<(&'a str, Option<Expr<'a>>)>,
+    p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
     o: Option<Expr<'a>>,
     e: Expr<'a>
 ) -> Expr<'a> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO add?
+        texpr: None, // can't know because not all params/return may annotated
         var:   ExprVar::LFun {
             params: p,
             bodyt:  o.map(Box::new),
@@ -196,8 +196,8 @@ peg::parser!{
         // *************
 
         // rule for type annotation
-        rule type_annot() -> Expr<'input> =
-            _ ":" _ t: vexpr() {t} // TODO add more colons + count
+        rule type_annot() -> (u32, Expr<'input>) =
+            _ l: (":"*<1, 9>) _ t: texpr() {(l.len() as u32 - 1, t)} // TODO add more colons + count
             // TODO pass count around parser? or save later stage?
         /*
         // labeled type
@@ -211,8 +211,8 @@ peg::parser!{
             n: type_name() o: type_annot()? {(n, o)}
         */
         // optionally typed value name
-        rule opt_typed_value_name() -> (&'input str, Option<Expr<'input>>) =
-            n: value_name() o: type_annot()? {(n, None)} // TODO not none
+        rule opt_typed_value_name() -> (&'input str, Option<(u32, Expr<'input>)>) =
+            n: value_name() o: type_annot()? {(n, o)}
         /*
         // type list
         rule type_list() -> Vec<Expr<'input>> =
@@ -292,10 +292,11 @@ peg::parser!{
         rule type_def() -> Def<'input> =
             n: type_name() _ ":=" _ t: vexpr() _ ";" {
                 Def {
-                    name:  n,
-                    tier:  None,
-                    texpr: None, // TODO allow annotation
-                    expr:  t,
+                    name:     n,
+                    min_tier: 1,
+                    max_tier: 9,
+                    texpr:    None, // TODO allow annotation
+                    expr:     t,
                 }
             }
         // definition of a constant variable
@@ -303,9 +304,10 @@ peg::parser!{
             n: value_name() _ ":=" _ v: vexpr() _ ";" {
                 Def{
                     name:  n,
-                    tier:  Some(0),
-                    texpr: None, // TODO allow annotation
-                    expr:  v,
+                    min_tier: 0,
+                    max_tier: 0,
+                    texpr:    None, // TODO allow annotation
+                    expr:     v,
                 }
             }
 
