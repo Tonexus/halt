@@ -8,9 +8,10 @@ use std::{
 #[derive(Debug, PartialEq)]
 pub struct Def<'a> {
     pub name:     &'a str,
+    pub is_type:  bool,
     pub min_tier: u32,
     pub max_tier: u32,
-    pub texpr:    Option<Expr<'a>>,
+    pub annot:    Option<Annot<'a>>,
     pub expr:     Expr<'a>,
 
 }
@@ -73,15 +74,17 @@ pub enum ExprVar<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetBind<'a> {
-    pub name:  &'a str,
-    pub annot: Option<Annot<'a>>,
-    pub value: Option<Expr<'a>>,
+    pub name:    &'a str,
+    pub is_type: bool,
+    pub annot:   Option<Annot<'a>>,
+    pub value:   Option<Expr<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunParam<'a> {
-    pub name:  &'a str,
-    pub annot: Option<Annot<'a>>,
+    pub name:    &'a str,
+    pub is_type: bool,
+    pub annot:   Option<Annot<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

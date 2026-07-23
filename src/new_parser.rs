@@ -97,11 +97,6 @@ peg::parser!{
         rule labeled_type() -> (&'input str, Expr<'input>) =
             n: label_name() t: type_annot() {(n, t)}
         */
-        // optionally typed value name // TODO used as param names, allow types as params
-        rule fun_param() -> FunParam<'input> =
-            n: value_name() o: type_annot()? {make::param(n, o)}
-        rule opt_typed_value_name() -> (&'input str, Option<Annot<'input>>) =
-            n: value_name() o: type_annot()? {(n, o)}
         /*
         // type list
         rule type_list() -> Vec<Expr<'input>> =
@@ -150,24 +145,28 @@ peg::parser!{
         // user defined variable names
         rule value_name() -> &'input str = // TODO later check for leading _ in var name
             quiet!{
-                n: $(lower() value_char()*) !value_char() {
-                    n
-                }
+                n: $(lower() value_char()*) !value_char() {n}
             } / expected!("value variable name")
         // user defined label names for product fields or sum tags
         rule label_name() -> &'input str =
             quiet!{
-                n: $(value_char()+) !value_char() {
-                    n
-                }
+                n: $(value_char()+) !value_char() {n}
             } / expected!("label name")
         // user defined type names
         rule type_name() -> &'input str =
             quiet!{
-                n: $(upper() alphanum()*) !type_char() {
-                    n
-                }
+                n: $(upper() alphanum()*) !type_char() {n}
             } / expected!("type variable name")
+        // check for keyword and also output whether type
+        rule value_var() -> (&'input str, bool) =
+            s: value_name() {?
+                (!is_kw_value(s) && !is_kw_statement(s))
+                    .then_some((s, false)).ok_or("value variable")
+            }
+        rule type_var() -> (&'input str, bool) =
+            s: type_name() {(s, true)}
+        rule var_name() -> (&'input str, bool) =
+            value_var() / type_var()
 
         // *********************
         // TOP-LEVEL DEFINITIONS
@@ -176,19 +175,14 @@ peg::parser!{
         // collect all top-level definitions
         pub rule defs() -> Vec<Def<'input>> =
             _ d: (def() **  _) _ {d}
-        rule def() -> Def<'input> = type_def() / val_def()
+        rule def() -> Def<'input> = type_def() // / val_def()
         // definition of a type
         rule type_def() -> Def<'input> =
-            n: type_name() _ ":=" _ t: vexpr() _ ";" {
-                Def {
-                    name:     n,
-                    min_tier: 1,
-                    max_tier: MAX_TIER,
-                    texpr:    None, // TODO allow annotation
-                    expr:     t,
-                }
+            s: var_name() t: type_annot()? _ ":=" _ e: vexpr() _ ";" {
+                make::def(s.0, s.1, t, e)
             }
         // definition of a constant variable
+        /*
         rule val_def() -> Def<'input> =
             n: value_name() _ ":=" _ v: vexpr() _ ";" {
                 Def{
@@ -199,6 +193,7 @@ peg::parser!{
                     expr:     v,
                 }
             }
+        */
 
         // ****************
         // TYPE EXPRESSIONS
@@ -338,9 +333,8 @@ peg::parser!{
             --
             // atoms / non-direct recursion
             e: vexpr_lit() {e}
-            e: vexpr_var() {e}
-            e: texpr_var() {e}
-            e: vexpr_fun() {e}
+            e: expr_var() {e}
+            e: expr_fun() {e}
             e: expr_let() {e}
             e: expr_prod() {e}
             e: expr_sum() {e}
@@ -372,30 +366,34 @@ peg::parser!{
             s: literal_string() {
                 make::vexpr_lit_ascii(s.as_bytes().to_vec())
             }
-        // value variable
-        rule vexpr_var() -> Expr<'input> =
-            n: value_name() {?
-                (!is_kw_value(n) && !is_kw_statement(n))
-                    .then_some(make::vexpr_var(n)).ok_or("value variable")
+        // variable
+        rule expr_var() -> Expr<'input> =
+            s: var_name() {
+                make::expr_var(s.0, s.1)
             }
-        // type variable
-        rule texpr_var() -> Expr<'input> =
-            n: type_name() {make::texpr_var(n)}
         // function expression (also closures)
         // distinguish vexpr func from expr func as vexpr allows imperative block
-        rule vexpr_fun() -> Expr<'input> =
+        rule expr_fun() -> Expr<'input> =
             "(" _ l: (fun_param() ** (_ "," _)) _ ("," _)? ")" _ "->"
             o: type_annot_rev()? _ // TODO only needed for block/vexpr version?
             b: vexpr() {
             //b: block() { // TODO
                 make::vexpr_fun(l, o, b)
             }
-        // let expression TODO allow optionally assigning var to expression as well
+        // single function parameter
+        rule fun_param() -> FunParam<'input> =
+            s: var_name() t: type_annot()? {make::param(s.0, s.1, t)}
+        // let expression
         rule expr_let() -> Expr<'input> =
-            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "|>"
+            "(" _ l: (let_bind() ** (_ "," _)) _ ("," _)? ")" _ "|>"
             e: vexpr() {
                 make::vexpr_let(l, e)
             }
+        // single let binding
+        rule let_bind() -> LetBind<'input> =
+            s: var_name() t: type_annot()? e: bound_expr()? {make::bind(s.0, s.1, t, e)}
+        rule bound_expr() -> Expr<'input> =
+            _ "=" _ e: vexpr() {e}
         // product expression
         rule expr_prod() -> Expr<'input> =
             "(" _ l: (tuple_value_list() / prod_value_list() / empty_value_list()) _ ")" {
@@ -514,7 +512,7 @@ mod tests {
     use super::*;
     #[test]
     fn basic_vexpr_1() {
-        assert_eq!(vexpr("foo"), Ok(make::vexpr_var("foo")));
+        assert_eq!(vexpr("foo"), Ok(make::expr_var("foo", false)));
     }
 
     #[test]
@@ -524,7 +522,7 @@ mod tests {
             Ok(make::vexpr_binop(
                 make::vexpr_lit_int(1),
                 make::vexpr_binop(
-                    make::vexpr_var("foo"),
+                    make::expr_var("foo", false),
                     make::vexpr_lit_float(2.1),
                     "_mul",
                 ),
@@ -538,7 +536,7 @@ mod tests {
         assert_eq!(
             vexpr("cat == \"dog\"~"),
             Ok(make::vexpr_binop(
-                make::vexpr_var("cat"),
+                make::expr_var("cat", false),
                 make::vexpr_unop(
                     make::vexpr_lit_ascii("dog".as_bytes().to_vec()),
                     "_neg"
@@ -553,10 +551,10 @@ mod tests {
         assert_eq!(
             vexpr("(a, b,) -> (c, d: U8) -> 5"),
             Ok(make::vexpr_fun(
-                [make::param("a", None), make::param("b", None)].to_vec(),
+                [make::param("a", false, None), make::param("b", false, None)].to_vec(),
                 None,
                 make::vexpr_fun(
-                    [make::param("c", None), make::param("d", Some(make::annot(0, make::texpr_var("U8"))))].to_vec(),
+                    [make::param("c", false, None), make::param("d", false, Some(make::annot(0, make::expr_var("U8", true))))].to_vec(),
                     None,
                     make::vexpr_lit_int(5),
                 )
@@ -569,11 +567,11 @@ mod tests {
         assert_eq!(
             vexpr("(a:: U32) -> Str: 7 + a"),
             Ok(make::vexpr_fun(
-                [make::param("a", Some(make::annot(1, make::texpr_var("U32"))))].to_vec(),
-                Some(make::annot(0, make::texpr_var("Str"))),
+                [make::param("a", false, Some(make::annot(1, make::expr_var("U32", true))))].to_vec(),
+                Some(make::annot(0, make::expr_var("Str", true))),
                 make::vexpr_binop(
                     make::vexpr_lit_int(7),
-                    make::vexpr_var("a"),
+                    make::expr_var("a", false),
                     "_add"
                 )
             ))
@@ -585,11 +583,11 @@ mod tests {
         assert_eq!(
             vexpr("foo bar baz 10"),
             Ok(make::expr_app(
-                make::vexpr_var("foo"),
+                make::expr_var("foo", false),
                 make::expr_app(
-                    make::vexpr_var("bar"),
+                    make::expr_var("bar", false),
                     make::expr_app(
-                        make::vexpr_var("baz"),
+                        make::expr_var("baz", false),
                         make::vexpr_lit_int(10)
                     )
                 )
@@ -602,9 +600,9 @@ mod tests {
         assert_eq!(
             vexpr("(foo, [bar = 1], baz, ())"),
             Ok(make::expr_prod([
-                (LABELS[0], make::vexpr_var("foo")),
+                (LABELS[0], make::expr_var("foo", false)),
                 (LABELS[1], make::expr_sum("bar", make::vexpr_lit_int(1))),
-                (LABELS[2], make::vexpr_var("baz")),
+                (LABELS[2], make::expr_var("baz", false)),
                 (LABELS[3], make::expr_prod(Vec::new()))
             ].to_vec()))
         );

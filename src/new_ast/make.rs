@@ -3,26 +3,25 @@ use crate::misc::*;
 
 // functions for making AST expressions
 
-pub fn vexpr_var<'a>(s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr:    None,
-        var:      ExprVar::Var {
-            name:    s,
-            is_type: false
-        },
-    };
+pub fn def<'a>(s: &'a str, is_type: bool, t: Option<Annot<'a>>, e: Expr<'a>) -> Def<'a> {
+    return Def {
+        name:     s,
+        is_type:  is_type,
+        min_tier: if is_type {1} else {0},
+        max_tier: if is_type {MAX_TIER} else {0},
+        annot:    t,
+        expr:     e,
+    }
 }
 
-pub fn texpr_var<'a>(s: &'a str) -> Expr<'a> {
+pub fn expr_var<'a>(s: &'a str, is_type: bool) -> Expr<'a> {
     return Expr {
-        min_tier: 1,
-        max_tier: MAX_TIER,
+        min_tier: if is_type {1} else {0},
+        max_tier: if is_type {MAX_TIER} else {0},
         texpr:    None,
         var:      ExprVar::Var {
             name:    s,
-            is_type: true
+            is_type: is_type
         },
     };
 }
@@ -79,7 +78,7 @@ pub fn vexpr_unop<'a>(e: Expr<'a>, s: &'a str) -> Expr<'a> {
         texpr:    None,
         // unary op is actuall function application on singleton
         var:      ExprVar::App {
-            fun:   Box::new(vexpr_var(s)),
+            fun:   Box::new(expr_var(s, false)),
             param: Box::new(e)
         }
     };
@@ -92,14 +91,14 @@ pub fn vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
         texpr:    None,
         // binary op is actually function application on product
         var:      ExprVar::App {
-            fun:   Box::new(vexpr_var(s)),
+            fun:   Box::new(expr_var(s, false)),
             param: Box::new(Expr {
                 min_tier: 0,
                 max_tier: 0,
                 texpr: None,
                 var:   ExprVar::Prod(Vec::from([
-                    ("0", e1),
-                    ("1", e2),
+                    (LABELS[0], e1),
+                    (LABELS[1], e2),
                 ]))
             })
         }
@@ -155,7 +154,7 @@ pub fn vexpr_fun<'a>(
 
 // TODO fix
 pub fn vexpr_let<'a>(
-    l: Vec<(&'a str, Option<Annot<'a>>)>,
+    l: Vec<LetBind<'a>>,
     e: Expr<'a>
 ) -> Expr<'a> {
     return Expr {
@@ -163,20 +162,18 @@ pub fn vexpr_let<'a>(
         max_tier: 0,
         texpr:    None,
         var:      ExprVar::Let {
-            vars: l.into_iter().map(
-                |(s, t)| LetBind{name: s, annot: t, value: None}
-            ).collect(),
+            vars: l,
             body: Box::new(e),
         }
     };
 }
 
-pub fn param<'a>(s: &'a str, t: Option<Annot<'a>>) -> FunParam<'a> {
-    return FunParam {name: s, annot: t};
+pub fn param<'a>(s: &'a str, b: bool, t: Option<Annot<'a>>) -> FunParam<'a> {
+    return FunParam {name: s, is_type: b, annot: t};
 }
 
-pub fn bind<'a>(s: &'a str, t: Option<Annot<'a>>, v: Option<Expr<'a>>) -> LetBind<'a> {
-    return LetBind {name: s, annot: t, value: v};
+pub fn bind<'a>(s: &'a str, b: bool, t: Option<Annot<'a>>, v: Option<Expr<'a>>) -> LetBind<'a> {
+    return LetBind {name: s, is_type: b, annot: t, value: v};
 }
 
 pub fn annot<'a>(n: u32, e: Expr<'a>) -> Annot<'a> {
