@@ -197,7 +197,7 @@ peg::parser!{
 
         // rule for type annotation
         rule type_annot() -> (u32, Expr<'input>) =
-            _ l: (":"*<1, 9>) _ t: texpr() {(l.len() as u32 - 1, t)} // TODO add more colons + count
+            _ l: (":"*<1, 9>) _ t: vexpr() {(l.len() as u32 - 1, t)} // TODO add more colons + count
             // TODO pass count around parser? or save later stage?
         /*
         // labeled type
@@ -316,8 +316,8 @@ peg::parser!{
         // ****************
 
         // type expressions // TODO add plus and mul for combining sums and products?
+        /*
         pub rule texpr() -> Expr<'input> = precedence!{
-            /*
             // function type is only binary op
             t1: @ _ "->" _ t2: (@) {
                 TypeExpr::Func(Box::new(t1), Box::new(t2))
@@ -347,17 +347,12 @@ peg::parser!{
                 TypeExpr::TypeParams(Box::new(t), l)
             }
             --
-            */
             // atoms
             t: texpr_var() {t}
-            /*
             t: prod_type() {t}
             t: sum_type() {t}
-            */
         }
-        // type variable
-        rule texpr_var() -> Expr<'input> =
-            n: type_name() {make_texpr_var(n)}
+        */
         /*
         // product type, implicit fields, explicit fields, or empty
         rule prod_type() -> TypeExpr<'input> =
@@ -465,6 +460,7 @@ peg::parser!{
             // atoms / non-direct recursion
             e: vexpr_lit() {e}
             e: vexpr_var() {e}
+            e: texpr_var() {e}
             /*
             e: prod_expr() {e}
             e: sum_expr() {e}
@@ -504,6 +500,9 @@ peg::parser!{
                 (!is_kw_value(n) && !is_kw_statement(n))
                     .then_some(make_vexpr_var(n)).ok_or("value variable")
             }
+        // type variable
+        rule texpr_var() -> Expr<'input> =
+            n: type_name() {make_texpr_var(n)}
         // closure expression (functions are closures with no closed-over vars)
         rule closure_expr() -> Expr<'input> =
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
