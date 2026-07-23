@@ -31,8 +31,8 @@ pub fn vexpr_lit_bool(b: bool) -> Expr<'static> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Bool(b))
+        texpr:    None, // TODO
+        var:      ExprVar::Lit(LitVar::Bool(b))
     }
 }
 
@@ -40,8 +40,8 @@ pub fn vexpr_lit_int(i: i32) -> Expr<'static> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Int(i))
+        texpr:    None, // TODO
+        var:      ExprVar::Lit(LitVar::Int(i))
     }
 }
 
@@ -49,8 +49,8 @@ pub fn vexpr_lit_float(f: f32) -> Expr<'static> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Float(f))
+        texpr:    None, // TODO
+        var:      ExprVar::Lit(LitVar::Float(f))
     }
 }
 
@@ -58,8 +58,8 @@ pub fn vexpr_lit_ascii(a: Vec<u8>) -> Expr<'static> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Ascii(a))
+        texpr:    None, // TODO
+        var:      ExprVar::Lit(LitVar::Ascii(a))
     }
 }
 
@@ -67,8 +67,8 @@ pub fn vexpr_lit_u8char(c: u8) -> Expr<'static> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::U8Char(c))
+        texpr:    None, // TODO
+        var:      ExprVar::Lit(LitVar::U8Char(c))
     }
 }
 
@@ -76,9 +76,9 @@ pub fn vexpr_unop<'a>(e: Expr<'a>, s: &'a str) -> Expr<'a> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None,
+        texpr:    None,
         // unary op is actuall function application on singleton
-        var:   ExprVar::LApp {
+        var:      ExprVar::App {
             fun:   Box::new(vexpr_var(s)),
             param: Box::new(e)
         }
@@ -89,15 +89,15 @@ pub fn vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None,
-        // binary op is actuall function application on product
-        var:   ExprVar::LApp {
+        texpr:    None,
+        // binary op is actually function application on product
+        var:      ExprVar::App {
             fun:   Box::new(vexpr_var(s)),
             param: Box::new(Expr {
                 min_tier: 0,
                 max_tier: 0,
                 texpr: None,
-                var:   ExprVar::LPro(Vec::from([
+                var:   ExprVar::Prod(Vec::from([
                     ("0", e1),
                     ("1", e2),
                 ]))
@@ -111,7 +111,7 @@ pub fn expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
         min_tier: 0,
         max_tier: MAX_TIER,
         texpr:    None,
-        var:      ExprVar::LApp {
+        var:      ExprVar::App {
             fun:   Box::new(e1),
             param: Box::new(e2)
         }
@@ -123,7 +123,7 @@ pub fn expr_prod<'a>(l: Vec<(&'a str, Expr<'a>)>) -> Expr<'a> {
         min_tier: 0,
         max_tier: MAX_TIER,
         texpr:    None,
-        var:      ExprVar::LPro(l)
+        var:      ExprVar::Prod(l)
     }
 }
 
@@ -132,7 +132,7 @@ pub fn expr_sum<'a>(s: &'a str, e: Expr<'a>) -> Expr<'a> {
         min_tier: 0,
         max_tier: MAX_TIER,
         texpr:    None,
-        var:      ExprVar::LSum(s, Box::new(e))
+        var:      ExprVar::Sum(s, Box::new(e))
     }
 }
 
@@ -144,8 +144,8 @@ pub fn vexpr_fun<'a>(
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None,
-        var:   ExprVar::LFun {
+        texpr:    None,
+        var:      ExprVar::Fun {
             params: p,
             bodyt:  o.map(Box::new),
             body:   Box::new(e),

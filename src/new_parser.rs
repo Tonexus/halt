@@ -127,7 +127,7 @@ peg::parser!{
                     |(n, v)| (LABELS[n], v)
                 ).collect());
             }
-        // label with value (instantiating a product)
+        // label with value (instantiating a product or sum)
         rule labeled_value() -> (&'input str, Expr<'input>) =
             n: label_name() _ "=" _ v: vexpr() {(n, v)}
         // labeled value list (instantiating product)
@@ -334,8 +334,8 @@ peg::parser!{
             e: vexpr_var() {e}
             e: texpr_var() {e}
             e: vexpr_fun() {e}
-            e: prod_expr() {e}
-            e: sum_expr() {e}
+            e: expr_prod() {e}
+            e: expr_sum() {e}
         }
 
         // any literal value
@@ -384,13 +384,13 @@ peg::parser!{
                 make::vexpr_fun(l, o, b)
             }
         // product expression
-        rule prod_expr() -> Expr<'input> =
+        rule expr_prod() -> Expr<'input> =
             "(" _ l: (tuple_value_list() / prod_value_list() / empty_value_list()) _ ")" {
                 make::expr_prod(l)
             }
         // choice expression
         // tagged expression
-        rule sum_expr() -> Expr<'input> =
+        rule expr_sum() -> Expr<'input> =
             "[" _ e: labeled_value() _ "]" {
                 make::expr_sum(e.0, e.1)
             }

@@ -32,17 +32,17 @@ pub enum ExprVar<'a> {
         name:    &'a str,
         is_type: bool,
     },
-    // expression is a literal value
-    LVal(LitVar),
-    // expression is a literal application of a function
-    LApp {
+    // expression is a literal
+    Lit(LitVar),
+    // expression is an application of a function
+    App {
         // the function
         fun:   Box<Expr<'a>>,
         // its parameter(s)
         param: Box<Expr<'a>>,
     },
-    // expression is a literal function
-    LFun {
+    // expression is a function
+    Fun {
         // list of parameter names and optional types
         params: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
         // optional return type
@@ -51,8 +51,8 @@ pub enum ExprVar<'a> {
         // TODO: allow function body to be imperative for non-type function
         body:   Box<Expr<'a>>,
     },
-    // expression is a literal let expression
-    LLet {
+    // expression is a let expression
+    Let {
         // list of variable names and optional types
         // TODO allow value
         vars:  Vec<(&'a str, Option<Box<Expr<'a>>>)>,
@@ -62,9 +62,9 @@ pub enum ExprVar<'a> {
         body:  Box<Expr<'a>>,
     },
     // expression is a literal product
-    LPro(Vec<(&'a str, Expr<'a>)>),
+    Prod(Vec<(&'a str, Expr<'a>)>),
     // expression is a literal sum
-    LSum(&'a str, Box<Expr<'a>>),
+    Sum(&'a str, Box<Expr<'a>>),
     // expression is the type of a function
     TFun(Box<Expr<'a>>, Box<Expr<'a>>),
     // expression is the type of a product
