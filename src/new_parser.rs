@@ -83,18 +83,24 @@ peg::parser!{
         // *************
 
         // rule for type annotation
-        rule type_annot() -> (u32, Expr<'input>) =
-            _ l: (":"*<1, 9>) _ t: vexpr() {(l.len() as u32 - 1, t)}
+        rule type_annot() -> Annot<'input> =
+            _ l: (":"*<1, 9>) _ t: vexpr() {
+                make::annot(l.len() as u32 - 1, t)
+            }
         // rule for reverse type annotation (function output)
-        rule type_annot_rev() -> (u32, Expr<'input>) =
-            _ t: vexpr() _ l: (":"*<1, 9>) {(l.len() as u32 - 1, t)}
+        rule type_annot_rev() -> Annot<'input> =
+            _ t: vexpr() _ l: (":"*<1, 9>) {
+                make::annot(l.len() as u32 - 1, t)
+            }
         /*
         // labeled type
         rule labeled_type() -> (&'input str, Expr<'input>) =
             n: label_name() t: type_annot() {(n, t)}
         */
         // optionally typed value name // TODO used as param names, allow types as params
-        rule opt_typed_value_name() -> (&'input str, Option<(u32, Expr<'input>)>) =
+        rule fun_param() -> FunParam<'input> =
+            n: value_name() o: type_annot()? {make::param(n, o)}
+        rule opt_typed_value_name() -> (&'input str, Option<Annot<'input>>) =
             n: value_name() o: type_annot()? {(n, o)}
         /*
         // type list
@@ -378,7 +384,7 @@ peg::parser!{
         // function expression (also closures)
         // distinguish vexpr func from expr func as vexpr allows imperative block
         rule vexpr_fun() -> Expr<'input> =
-            "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")" _ "->"
+            "(" _ l: (fun_param() ** (_ "," _)) _ ("," _)? ")" _ "->"
             o: type_annot_rev()? _ // TODO only needed for block/vexpr version?
             b: vexpr() {
             //b: block() { // TODO
@@ -547,10 +553,10 @@ mod tests {
         assert_eq!(
             vexpr("(a, b,) -> (c, d: U8) -> 5"),
             Ok(make::vexpr_fun(
-                [("a", None), ("b", None)].to_vec(),
+                [make::param("a", None), make::param("b", None)].to_vec(),
                 None,
                 make::vexpr_fun(
-                    [("c", None), ("d", Some((0, make::texpr_var("U8"))))].to_vec(),
+                    [make::param("c", None), make::param("d", Some(make::annot(0, make::texpr_var("U8"))))].to_vec(),
                     None,
                     make::vexpr_lit_int(5),
                 )
@@ -563,8 +569,8 @@ mod tests {
         assert_eq!(
             vexpr("(a:: U32) -> Str: 7 + a"),
             Ok(make::vexpr_fun(
-                [("a", Some((1, make::texpr_var("U32"))))].to_vec(),
-                Some((0, make::texpr_var("Str"))),
+                [make::param("a", Some(make::annot(1, make::texpr_var("U32"))))].to_vec(),
+                Some(make::annot(0, make::texpr_var("Str"))),
                 make::vexpr_binop(
                     make::vexpr_lit_int(7),
                     make::vexpr_var("a"),

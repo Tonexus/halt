@@ -137,8 +137,8 @@ pub fn expr_sum<'a>(s: &'a str, e: Expr<'a>) -> Expr<'a> {
 }
 
 pub fn vexpr_fun<'a>(
-    l: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
-    o: Option<(u32, Expr<'a>)>,
+    l: Vec<FunParam<'a>>,
+    o: Option<Annot<'a>>,
     e: Expr<'a>
 ) -> Expr<'a> {
     return Expr {
@@ -155,7 +155,7 @@ pub fn vexpr_fun<'a>(
 
 // TODO fix
 pub fn vexpr_let<'a>(
-    l: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
+    l: Vec<(&'a str, Option<Annot<'a>>)>,
     e: Expr<'a>
 ) -> Expr<'a> {
     return Expr {
@@ -164,10 +164,21 @@ pub fn vexpr_let<'a>(
         texpr:    None,
         var:      ExprVar::Let {
             vars: l.into_iter().map(
-                |(s, t)| LetBind{name: s, annot: t.map(|(n, e)| TypeAnnot{tier: n, expr: e}), value: None}
+                |(s, t)| LetBind{name: s, annot: t, value: None}
             ).collect(),
             body: Box::new(e),
         }
     };
 }
 
+pub fn param<'a>(s: &'a str, t: Option<Annot<'a>>) -> FunParam<'a> {
+    return FunParam {name: s, annot: t};
+}
+
+pub fn bind<'a>(s: &'a str, t: Option<Annot<'a>>, v: Option<Expr<'a>>) -> LetBind<'a> {
+    return LetBind {name: s, annot: t, value: v};
+}
+
+pub fn annot<'a>(n: u32, e: Expr<'a>) -> Annot<'a> {
+    return Annot {tier: n, expr: e};
+}

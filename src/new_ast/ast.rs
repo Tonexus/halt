@@ -44,9 +44,9 @@ pub enum ExprVar<'a> {
     // expression is a function
     Fun {
         // list of parameter names and optional types
-        params: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
+        params: Vec<FunParam<'a>>,
         // optional return type
-        bodyt:  Option<Box<(u32, Expr<'a>)>>,
+        bodyt:  Option<Box<Annot<'a>>>,
         // function body
         // TODO: allow function body to be imperative for non-type function
         body:   Box<Expr<'a>>,
@@ -74,18 +74,18 @@ pub enum ExprVar<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetBind<'a> {
     pub name:  &'a str,
-    pub annot: Option<TypeAnnot<'a>>,
+    pub annot: Option<Annot<'a>>,
     pub value: Option<Expr<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FunArg<'a> {
+pub struct FunParam<'a> {
     pub name:  &'a str,
-    pub annot: Option<TypeAnnot<'a>>,
+    pub annot: Option<Annot<'a>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TypeAnnot<'a> {
+pub struct Annot<'a> {
     pub tier: u32,
     pub expr: Expr<'a>,
 }
