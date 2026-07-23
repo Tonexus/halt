@@ -3,6 +3,8 @@
 use regex::Regex;
 use lazy_static::lazy_static;
 
+pub const MAX_TIER: u32 = 9;
+
 // implicit label names
 pub const LABELS: [&str; 10] = ["_0", "_1", "_2", "_3", "_4", "_5", "_6", "_7", "_8", "_9"];
 

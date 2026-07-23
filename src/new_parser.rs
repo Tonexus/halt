@@ -98,7 +98,7 @@ fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
 fn make_expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
     return Expr {
         min_tier: 0,
-        max_tier: 9,
+        max_tier: MAX_TIER,
         texpr:    None,
         var:      ExprVar::LApp {
             fun:   Box::new(e1),
@@ -115,7 +115,7 @@ fn make_vexpr_fun<'a>(
     return Expr {
         min_tier: 0,
         max_tier: 0,
-        texpr: None, // can't know because not all params/return may annotated
+        texpr: None,
         var:   ExprVar::LFun {
             params: p,
             bodyt:  o.map(Box::new),
@@ -127,7 +127,7 @@ fn make_vexpr_fun<'a>(
 fn make_texpr_var<'a>(s: &'a str) -> Expr<'a> {
     return Expr {
         min_tier: 1,
-        max_tier: 9,
+        max_tier: MAX_TIER,
         texpr:    None,
         var:      ExprVar::Var(s),
     };
@@ -207,7 +207,6 @@ peg::parser!{
         // MISCELLANEOUS
         // *************
 
-        // TODO whitespace after?
         // rule for type annotation
         rule type_annot() -> (u32, Expr<'input>) =
             _ l: (":"*<1, 9>) _ t: vexpr() {(l.len() as u32 - 1, t)}
@@ -309,7 +308,7 @@ peg::parser!{
                 Def {
                     name:     n,
                     min_tier: 1,
-                    max_tier: 9,
+                    max_tier: MAX_TIER,
                     texpr:    None, // TODO allow annotation
                     expr:     t,
                 }
@@ -508,6 +507,7 @@ peg::parser!{
         rule texpr_var() -> Expr<'input> =
             n: type_name() {make_texpr_var(n)}
         // function expression (also closures)
+        // distinguish vexpr func from expr func as vexpr allows imperative block
         rule vexpr_fun() -> Expr<'input> =
             "(" _ l: (opt_typed_value_name() ** (_ "," _)) _ ("," _)? ")"
             _ "->"
