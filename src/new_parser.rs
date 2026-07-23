@@ -107,6 +107,24 @@ fn make_expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
     }
 }
 
+fn make_expr_pro<'a>(l: Vec<(&'a str, Expr<'a>)>) -> Expr<'a> {
+    return Expr {
+        min_tier: 0,
+        max_tier: MAX_TIER,
+        texpr:    None,
+        var:      ExprVar::LPro(l)
+    }
+}
+
+fn make_expr_sum<'a>(s: &'a str, e: Expr<'a>) -> Expr<'a> {
+    return Expr {
+        min_tier: 0,
+        max_tier: MAX_TIER,
+        texpr:    None,
+        var:      ExprVar::LSum(s, Box::new(e))
+    }
+}
+
 fn make_vexpr_fun<'a>(
     p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
     o: Option<(u32, Expr<'a>)>,
@@ -517,22 +535,16 @@ peg::parser!{
                 make_vexpr_fun(l, o, b)
             }
         /*
-        // product expression TODO: allow typed fields?
+        // product expression
         rule prod_expr() -> ValueExpr<'input> =
             "(" _ l: (labeled_value_list() / value_list_labeled()) _ ")" {
-                ValueExpr {
-                    variant: ExprVariant::Prod(l),
-                    texpr:   None,
-                }
+                make_expr_pro(l)
             }
-        // choice expression TODO: allow types to imply position?
-        // tagged expression TODO: allow typed tags?
+        // choice expression
+        // tagged expression
         rule sum_expr() -> ValueExpr<'input> =
-            "[" _ e: (labeled_value() / (e: value_expr() {("_0", e)})) _ "]" {
-                ValueExpr {
-                    variant: ExprVariant::Sum(e.0, Box::new(e.1)),
-                    texpr:   None,
-                }
+            "[" _ e: labeled_value() _ "]" {
+                make_expr_sum(e.0, e.1)
             }
         */
         /* TODO UFCS
