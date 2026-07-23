@@ -152,8 +152,7 @@ pub fn vexpr_fun<'a>(
     };
 }
 
-// TODO fix
-pub fn vexpr_let<'a>(
+pub fn expr_let<'a>(
     l: Vec<LetBind<'a>>,
     e: Expr<'a>
 ) -> Expr<'a> {
