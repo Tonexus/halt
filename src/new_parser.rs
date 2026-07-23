@@ -7,149 +7,6 @@ use super::misc::*;
 
 pub use program_parser::*;
 
-fn make_vexpr_var<'a>(s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr:    None,
-        var:      ExprVar::Var(s),
-    };
-}
-
-fn make_vexpr_lit_bool(b: bool) -> Expr<'static> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Bool(b))
-    }
-}
-
-fn make_vexpr_lit_int(i: i32) -> Expr<'static> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Int(i))
-    }
-}
-
-fn make_vexpr_lit_float(f: f32) -> Expr<'static> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Float(f))
-    }
-}
-
-fn make_vexpr_lit_ascii(a: Vec<u8>) -> Expr<'static> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::Ascii(a))
-    }
-}
-
-fn make_vexpr_lit_u8char(c: u8) -> Expr<'static> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None, // TODO
-        var:   ExprVar::LVal(LitVar::U8Char(c))
-    }
-}
-
-fn make_vexpr_unop<'a>(e: Expr<'a>, s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None,
-        // unary op is actuall function application on singleton
-        var:   ExprVar::LApp {
-            fun:   Box::new(make_vexpr_var(s)),
-            param: Box::new(e)
-        }
-    };
-}
-
-fn make_vexpr_binop<'a>(e1: Expr<'a>, e2: Expr<'a>, s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None,
-        // binary op is actuall function application on product
-        var:   ExprVar::LApp {
-            fun:   Box::new(make_vexpr_var(s)),
-            param: Box::new(Expr {
-                min_tier: 0,
-                max_tier: 0,
-                texpr: None,
-                var:   ExprVar::LPro(Vec::from([
-                    ("0", e1),
-                    ("1", e2),
-                ]))
-            })
-        }
-    };
-}
-
-fn make_expr_app<'a>(e1: Expr<'a>, e2: Expr<'a>) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: MAX_TIER,
-        texpr:    None,
-        var:      ExprVar::LApp {
-            fun:   Box::new(e1),
-            param: Box::new(e2)
-        }
-    }
-}
-
-fn make_expr_pro<'a>(l: Vec<(&'a str, Expr<'a>)>) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: MAX_TIER,
-        texpr:    None,
-        var:      ExprVar::LPro(l)
-    }
-}
-
-fn make_expr_sum<'a>(s: &'a str, e: Expr<'a>) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: MAX_TIER,
-        texpr:    None,
-        var:      ExprVar::LSum(s, Box::new(e))
-    }
-}
-
-fn make_vexpr_fun<'a>(
-    p: Vec<(&'a str, Option<(u32, Expr<'a>)>)>,
-    o: Option<(u32, Expr<'a>)>,
-    e: Expr<'a>
-) -> Expr<'a> {
-    return Expr {
-        min_tier: 0,
-        max_tier: 0,
-        texpr: None,
-        var:   ExprVar::LFun {
-            params: p,
-            bodyt:  o.map(Box::new),
-            body:   Box::new(e),
-        }
-    };
-}
-
-fn make_texpr_var<'a>(s: &'a str) -> Expr<'a> {
-    return Expr {
-        min_tier: 1,
-        max_tier: MAX_TIER,
-        texpr:    None,
-        var:      ExprVar::Var(s),
-    };
-}
 
 peg::parser!{
     grammar program_parser() for str {
@@ -405,77 +262,77 @@ peg::parser!{
         pub rule vexpr() -> Expr<'input> = precedence!{
             // equality
             e1: (@) _ "==" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_eq")
+                make::vexpr_binop(e1, e2, "_eq")
             }
             e1: (@) _ "!=" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_neq")
+                make::vexpr_binop(e1, e2, "_neq")
             }
             --
             // comparison / shift
             e1: (@) _ ">" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_gt")
+                make::vexpr_binop(e1, e2, "_gt")
             }
             e1: (@) _ "<" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_lt")
+                make::vexpr_binop(e1, e2, "_lt")
             }
             e1: (@) _ ">=" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_gte")
+                make::vexpr_binop(e1, e2, "_gte")
             }
             e1: (@) _ "<=" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_lte")
+                make::vexpr_binop(e1, e2, "_lte")
             }
             --
             // or
             e1: (@) _ "\\/" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_or")
+                make::vexpr_binop(e1, e2, "_or")
             }
             --
             // and
             e1: (@) _ "/\\" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_and")
+                make::vexpr_binop(e1, e2, "_and")
             }
             --
             // addition and subtraction
             e1: (@) _ "+" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_add")
+                make::vexpr_binop(e1, e2, "_add")
             }
             e1: (@) _ "-" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_sub")
+                make::vexpr_binop(e1, e2, "_sub")
             }
             --
             // multiplication, division, and modulo
             e1: (@) _ "*" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_mul")
+                make::vexpr_binop(e1, e2, "_mul")
             }
             e1: (@) _ "/" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_div")
+                make::vexpr_binop(e1, e2, "_div")
             }
             e1: (@) _ "%" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_mod")
+                make::vexpr_binop(e1, e2, "_mod")
             }
             --
             // exponent and logarithm TODO: check associativity
             e1: (@) _ "^" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_pow")
+                make::vexpr_binop(e1, e2, "_pow")
             }
             e1: (@) _ "@" _ e2: @ {
-                make_vexpr_binop(e1, e2, "_log")
+                make::vexpr_binop(e1, e2, "_log")
             }
             --
             // suffix neg, ref, deref
             e: @ _ "~" {
-                make_vexpr_unop(e, "_neg")
+                make::vexpr_unop(e, "_neg")
             }
             e: @ _ "&" {
-                make_vexpr_unop(e, "_ref")
+                make::vexpr_unop(e, "_ref")
             }
             e: @ _ "$" {
-                make_vexpr_unop(e, "_deref")
+                make::vexpr_unop(e, "_deref")
             }
             --
             // function application (right associative)
             e1: @ _ e2: (@) {
-                make_expr_app(e1, e2)
+                make::expr_app(e1, e2)
             }
             --
             // atoms / non-direct recursion
@@ -498,32 +355,32 @@ peg::parser!{
         // boolean literal
         rule lit_bool_expr() -> Expr<'input> =
             b: literal_boolean() {
-                make_vexpr_lit_bool(b)
+                make::vexpr_lit_bool(b)
             }
         // signed integer literal
         rule lit_int_expr() -> Expr<'input> =
             n: literal_integer() {
-                make_vexpr_lit_int(n)
+                make::vexpr_lit_int(n)
             }
         // floating point literal
         rule lit_float_expr() -> Expr<'input> =
             x: literal_float() {
-                make_vexpr_lit_float(x)
+                make::vexpr_lit_float(x)
             }
         // ascii string literal
         rule lit_ascii_expr() -> Expr<'input> =
             s: literal_string() {
-                make_vexpr_lit_ascii(s.as_bytes().to_vec())
+                make::vexpr_lit_ascii(s.as_bytes().to_vec())
             }
         // value variable
         rule vexpr_var() -> Expr<'input> =
             n: value_name() {?
                 (!is_kw_value(n) && !is_kw_statement(n))
-                    .then_some(make_vexpr_var(n)).ok_or("value variable")
+                    .then_some(make::vexpr_var(n)).ok_or("value variable")
             }
         // type variable
         rule texpr_var() -> Expr<'input> =
-            n: type_name() {make_texpr_var(n)}
+            n: type_name() {make::texpr_var(n)}
         // function expression (also closures)
         // distinguish vexpr func from expr func as vexpr allows imperative block
         rule vexpr_fun() -> Expr<'input> =
@@ -532,7 +389,7 @@ peg::parser!{
             o: type_annot_rev()? _ // optional type, normal format
             b: vexpr() {
             //b: block() {
-                make_vexpr_fun(l, o, b)
+                make::vexpr_fun(l, o, b)
             }
         /*
         // product expression
@@ -654,18 +511,18 @@ mod tests {
     use super::*;
     #[test]
     fn basic_vexpr_1() {
-        assert_eq!(vexpr("foo"), Ok(make_vexpr_var("foo")));
+        assert_eq!(vexpr("foo"), Ok(make::vexpr_var("foo")));
     }
 
     #[test]
     fn basic_vexpr_2() {
         assert_eq!(
             vexpr("1 + foo * 2.1"),
-            Ok(make_vexpr_binop(
-                make_vexpr_lit_int(1),
-                make_vexpr_binop(
-                    make_vexpr_var("foo"),
-                    make_vexpr_lit_float(2.1),
+            Ok(make::vexpr_binop(
+                make::vexpr_lit_int(1),
+                make::vexpr_binop(
+                    make::vexpr_var("foo"),
+                    make::vexpr_lit_float(2.1),
                     "_mul",
                 ),
                 "_add"
@@ -677,10 +534,10 @@ mod tests {
     fn basic_vexpr_3() {
         assert_eq!(
             vexpr("cat == \"dog\"~"),
-            Ok(make_vexpr_binop(
-                make_vexpr_var("cat"),
-                make_vexpr_unop(
-                    make_vexpr_lit_ascii("dog".as_bytes().to_vec()),
+            Ok(make::vexpr_binop(
+                make::vexpr_var("cat"),
+                make::vexpr_unop(
+                    make::vexpr_lit_ascii("dog".as_bytes().to_vec()),
                     "_neg"
                 ),
                 "_eq"
@@ -692,10 +549,10 @@ mod tests {
     fn basic_vexpr_4(){
         assert_eq!(
             vexpr("(a, b,) -> 5"),
-            Ok(make_vexpr_fun(
+            Ok(make::vexpr_fun(
                 [("a", None), ("b", None)].to_vec(),
                 None,
-                make_vexpr_lit_int(5),
+                make::vexpr_lit_int(5),
             ))
         );
     }
@@ -704,12 +561,12 @@ mod tests {
     fn basic_vexpr_5(){
         assert_eq!(
             vexpr("(a:: U32) -> Str: 7 + a"),
-            Ok(make_vexpr_fun(
-                [("a", Some((1, make_texpr_var("U32"))))].to_vec(),
-                Some((0, make_texpr_var("Str"))),
-                make_vexpr_binop(
-                    make_vexpr_lit_int(7),
-                    make_vexpr_var("a"),
+            Ok(make::vexpr_fun(
+                [("a", Some((1, make::texpr_var("U32"))))].to_vec(),
+                Some((0, make::texpr_var("Str"))),
+                make::vexpr_binop(
+                    make::vexpr_lit_int(7),
+                    make::vexpr_var("a"),
                     "_add"
                 )
             ))
@@ -720,13 +577,13 @@ mod tests {
     fn basic_vexpr_6(){
         assert_eq!(
             vexpr("foo bar baz 10"),
-            Ok(make_expr_app(
-                make_vexpr_var("foo"),
-                make_expr_app(
-                    make_vexpr_var("bar"),
-                    make_expr_app(
-                        make_vexpr_var("baz"),
-                        make_vexpr_lit_int(10)
+            Ok(make::expr_app(
+                make::vexpr_var("foo"),
+                make::expr_app(
+                    make::vexpr_var("bar"),
+                    make::expr_app(
+                        make::vexpr_var("baz"),
+                        make::vexpr_lit_int(10)
                     )
                 )
             ))
