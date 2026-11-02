@@ -12,12 +12,12 @@ Halt is a statically typed imperative language that is heavily inspired by Rust.
         - IO (display, file system, networking, etc.)
         - Memory allocation
         - Non-termination as a coeffect (hence the name) with termination by default (enabling [simple static resource analysis](https://people.csail.mit.edu/meyer/meyer-ritchie.pdf))
-        - Continuations
+        - First-class delimited continuations
 - Aliasable XOR mutable using [substructural types](https://en.wikipedia.org/wiki/Substructural_type_system) and [uniqueness types](https://en.wikipedia.org/wiki/Uniqueness_type)
     - Immutability by default
-    - Aliasability and mutability defined per struct/tuple field
+    - Aliasability and mutability defined per struct/tuple field (partial borrows allowed)
 - Array index types to reduce bounds checking (inspired by functional lenses)
 - Compile-time constant evaluation
-- "Borrow checking" using above substructural, uniqueness, and [fractional uniqueness](https://arxiv.org/abs/2310.18166) types
+- "Borrow checking" using above substructural, uniqueness, and [fractional uniqueness](https://arxiv.org/abs/2310.18166) types. See [current design](docs/fractional_uniqueness_design.md).
 - RAII
 - Multiple allocator strategies (possibly allowing garbage collected shared pointers)
