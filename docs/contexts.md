@@ -1,3 +1,3 @@
-A context is a unit of local state for execution, usually includes the stack.
+## Delimited continuations
 
-Someone with pointer to context can jump into executing that context (via some primitive?)
+We use delimited continuations with state to represent effects.

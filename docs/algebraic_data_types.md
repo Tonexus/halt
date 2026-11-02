@@ -1,18 +1,12 @@
 ## Algeraic Data types
 
-Halt's data types are all compositions via products and sums. A product of types
-`A` and `B` may be expressed as `(A, B)`, and values of type `(A, B)` are
+Halt's data types are all structural compositions via products and sums. A product of types
+`A` and `B` may be expressed as `(a: A; b: B)`, and values of type `(a: A; b: B)` are
 constructed from a value of type `A` *and* a value of type `B`.  Similarly, a
-sum of types `A` and `B` may be expressed as `[A, B]`, and values of type
-`[A, B]` are constructed from a value of type `A` *or* a value of type `B`.
-In addition to implicitly labeled compositions, Halt also allows for explicitly
-labeled products and sums.
+sum of types `A` and `B` may be expressed as `[a: A; b: B]`, and values of type
+`[a: A, b: B]` are constructed from a value of type `A` *or* a value of type `B`.
 
 ### Primitive and keyword data types
-
-The only truly primitive data type in Halt is the reference type. Halt has
-non-primitive keyword types, but it will be shown later that they may be treated
-as compositions:
 
 - `Bool` - taking on either the value "true" or the value "false"
 
@@ -26,66 +20,44 @@ as compositions:
 
 ### Product types
 
-Those familiar with tuples and structs will be familiar with product types. In
-fact, in Halt, tuples are just implicilty labeled products, whereas structs are
-explicitly labeled.
-
-Product types are so named because the number of distinct values that may
-inhabit a product type `(A, B)` is the product of the number values that may
-inhabit `A` and the number of values that may inhabit `B`. Thus, the most
-primitive product type is the empty product type, denoted as `()` and referred
-to as the unit type. The unit type may be inhabited by exactly one value, the
-unit value, which is also denoted `()`.
-
 In Halt, general product types have the following forms:
 
 ```
-// explicitly labeled
-Foo := (label_1: Type1, label_2: Type2, label_3: Type3);
+// unit
+Unit := ();
 
-// implicitly labeled
-Bar := (Type1, Type2, Type3);
+// explicitly labeled (struct/record)
+Foo := (label_1: Type1; label_2: Type2; label_3: Type3);
 
-// Bar is equivalent to (_0: Type1, _1: Type2, _2: Type3)
+// implicitly labeled (tuple)
+Bar := (Type1; Type2; Type3);
 
-// instantiation
-let foo: Foo = (label_1 = value_1, label_2 = value_2, label_3 = value_3);
-let bar: Bar = (value_1, value_2, value_3);
+// Bar is equivalent to (_0: Type1; _1: Type2; _2: Type3)
+
+...
+
+	// instantiation in imperative code
+	let foo: Foo = (label_1 = value_1, label_2 = value_2, label_3 = value_3);
+	let bar: Bar = (value_1, value_2, value_3);
 ```
 TODO: move to special types section (also include coproduct, accessor)
 An array is expressed as follows:
 
 ### Sum types
 
-Those familiar with tagged unions may be familiar with sum types. Like their
-product type cousins, sum types may also be explicitly labeled or implicitly
-labeled. In Halt, an explicitly labeled sum is known as a choice. Someone give
-me a good name for explicitly labeled sums.
-
-As with product types, sum types are so named because the number of distinct
-values that may inhabit a sum type `[A, B]` is the sum of the number values that
-may inhabit `A` and the number of values that may inhabit `B`. Again, the most
-primitive sum type is the empty product type, denoted as `[]` and referred to as
-the bottom type. However, unlike the unit type, the bottom type cannot be
-inhabited by any values. Thus, a statement containing a value of type bottom
-must be unreachable.
-
 In Halt, general sum types have the following forms:
 
 ```
-// explicitly labeled
-Foo := [label_1: Type1, label_2: Type2, label_3: Type3]
+// bottom type
+Bot := [];
 
-// implicitly labeled
-Bar := [Type1, Type2, Type3]
+// enum/choice
+Foo := [label_1: Type1; label_2: Type2; label_3: Type3]
 
-// Bar is equivalent to [_0: Type1, _1: Type2, _2: Type3]
+...
 
-// instantiation for value: Type2
-let foo: Foo = [label_2 = value];
-let bar: Bar = [value];
-// note that if types are redundant, the explicit form must be used!
-// bar = [_1 = value];
+	// instantiation in imperative code for value: Type2
+	let foo: Foo = [label_2 = value];
 ```
 
 ### Type equivalencies and automatic type coercions
@@ -101,28 +73,21 @@ equivalent to `Bool`, and `N256` is equivalent to `U8` and `S8`.
 
 #### Singleton canonicalization
 
-Any implicitly labeled singleton type can be coerced to and from its constituent
-type. In other words, the types `A`, `(A)`, `(_1: A)`, `[A]`, and `[_1: A]` may
-all be coerced to each other. In particular, field access uses the "canonical"
-version of the type with all singleton compositions stripped away. Another
+Any singleton type is equivalent to the unwrapped type. In particular, `T` is the
+same as `(T)`, which is the same as `((T))`, and so on. An
 interesting implication of canonicalization is that every function may be
 treated as an arity-1 function with its sole parameter being a tuple.
-Furthermore, parentheses and square brackets can both be naturally used for both
-grouping expressions and for constructing product and sum values, as the
-singleton tuple `(5 + 5)` has type `(U32)`, but may be coerced to `U32`.
+Furthermore, parentheses can both be naturally used for both
+grouping expressions and for constructing products, as the
+singleton tuple `(5 + 5)` has type `(U32)`, which is the same as `U32`.
 
-#### Sum up-coercions
+#### Width subtyping
 
-Canonicalization may seem to contradict the instatiation of implicitly labelled
-sums. In the example with sums, `[value]` must have type `[Type2]`, which is
-equivalent to `Type2`, but it is assigned to a variable of type
-`[Type1, Type2, ...]`. In Halt, a choice may be automatically coerced to a
-choice with more summands as long as the source tags and types are a subset of
-the destination tags and types.
+There is a natural subtyping relationship where a product with more fields may be used
+in any place that expects fewer fields. Similarly, a sum with fewer variants may be
+used in any place that expects more variants.
 
-#### Product down-coercions
+Thus, we have the width subtype relationship based on structure given by `(A; B; C) <: (A; B)`,
+`(a: A; b: B; c: C) <: (a: A; b: B)`, and `[a: A; b: B] <: [a: A; b: B, c: C]`.
 
-While sums may coerce to larger sums, the reverse is true for products. A struct
-may automatically be coerced to a struct with fewer factors as long as the
-source fields and types are a superset of the destination fields and types.
-
+More on subtyping in `polymorphism.md`.

@@ -1,0 +1,14 @@
+declare functions as:
+
+(a, b, c) -> a + b + c;
+
+declare variables in let expression as:
+
+(a = 1, b = 2, c = 3) |> a + b + c;
+
+type tier given by number of colons
+
+num: U32
+U32:: T1
+List:: T1 -> T1
+T1 -> T1::: T2
